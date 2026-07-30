@@ -279,6 +279,21 @@ function ghUrl(){
   return "https://api.github.com/repos/" + C.owner + "/" + C.repo
        + "/contents/" + encodeURIComponent(C.path);
 }
+/* エラーのとき、GitHubが返した理由まで出す（「HTTP 401」だけでは直せない） */
+async function ghWhy(res){
+  let why = "HTTP " + res.status;
+  try{
+    const j = await res.json();
+    if(j && j.message) why += "：" + j.message;
+  }catch(e){}
+  return why;
+}
+/* 鍵そのものは見せずに、形だけ見せる（欠けて貼られていないかの確認用） */
+function tokShape(){
+  const t = C.token || "";
+  if(!t) return "鍵なし";
+  return t.length + "文字・先頭 " + t.slice(0, 11) + "…末尾 " + t.slice(-4);
+}
 function ghFetch(method, body){
   const opt = { method: method, cache: "no-store", headers: {
     "Authorization": "Bearer " + C.token,
@@ -333,7 +348,7 @@ async function cloudPull(){
       paintCloud();
       return false;
     }
-    if(!res.ok) throw new Error("HTTP " + res.status);
+    if(!res.ok) throw new Error(await ghWhy(res));
     const j = await res.json();
     cloudSha = j.sha;
     const changed = mergeProgress(JSON.parse(b64dec(j.content)));
@@ -372,7 +387,7 @@ async function cloudPush(force){
         await cloudPull();           // 別の端末が先に書いた → 取り込んでからもう一度
         continue;
       }
-      throw new Error("HTTP " + res.status);
+      throw new Error(await ghWhy(res));
     }
   }catch(e){
     cloudDirty = true;               // 次の機会に送り直す
@@ -1055,8 +1070,13 @@ function io(){
     + '</div>'
     + '<div class="row" style="margin-top:.5rem">'
     + '<button id="syncNow">いま同期する</button>'
-    + '<span class="dim" id="cloudMsg">' + esc(cloudOn() ? (cloudState || "待機") : "まだ鍵が無い") + '</span>'
-    + '</div></div>';
+    + '<button id="tokTest">鍵を試す</button>'
+    + '</div>'
+    + '<div class="dim" style="margin-top:.4rem" id="cloudMsg">'
+    + esc(cloudOn() ? (cloudState || "待機") : "まだ鍵が無い") + '</div>'
+    + (cloudOn() ? '<div class="dim" style="margin-top:.2rem">いま入っている鍵：'
+                   + esc(tokShape()) + '（正しければ 93文字前後・先頭 github_pat_）</div>' : '')
+    + '</div>';
   h += '<div class="card"><div class="book">進捗の書き出し</div>'
     + '<div class="dim">カニに見せる用。<b>iPhoneなら「iPhone：共有して保存」</b>を押し、'
     + '「“ファイル”に保存」→ <b>iCloud Drive の「暗唱」フォルダ</b>を選ぶ。'
@@ -1084,6 +1104,27 @@ function io(){
   const del = document.getElementById("tokDel");
   if(del) del.onclick = () => {
     C.token = ""; cloudSaveCfg(); cloudState = ""; cloudSha = null; paintCloud(); io();
+  };
+  /* 鍵そのものが通るか（GitHubに自分が誰か聞くだけ）→ リポジトリの権限と切り分ける */
+  document.getElementById("tokTest").onclick = async () => {
+    if(!cloudOn()){ cloudState = "まだ鍵が無い"; paintCloud(); return; }
+    cloudState = "試している"; paintCloud();
+    try{
+      const r1 = await fetch("https://api.github.com/user", { cache:"no-store", headers:{
+        "Authorization": "Bearer " + C.token, "Accept": "application/vnd.github+json" } });
+      if(!r1.ok){ cloudState = "鍵が通らない（" + (await ghWhy(r1)) + "）"; paintCloud(); return; }
+      const me = await r1.json();
+      const r2 = await ghFetch("GET");
+      if(r2.status === 404){
+        cloudState = "鍵は " + me.login + " として通った。ただし "
+          + C.owner + "/" + C.repo + " が見えない（対象リポジトリか権限の選び忘れ）";
+      }else if(!r2.ok){
+        cloudState = "鍵は " + me.login + " として通った。読み込みで " + (await ghWhy(r2));
+      }else{
+        cloudState = "鍵は " + me.login + " として通り、リポジトリも読めた";
+      }
+    }catch(e){ cloudState = "つながらない（" + e.message + "）"; }
+    paintCloud();
   };
   document.getElementById("syncNow").onclick = async () => {
     if(!cloudOn()){ cloudState = "まだ鍵が無い"; paintCloud(); return; }
