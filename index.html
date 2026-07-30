@@ -189,6 +189,7 @@
     <h1>論証暗唱</h1>
     <span class="grow"></span>
     <span class="dim" id="hdr"></span>
+    <span class="dim" id="cloudHdr"></span>
     <button class="link" id="btnToc">目次</button>
     <button class="link" id="btnHome">ホーム</button>
   </header>
@@ -240,7 +241,157 @@ function save(){
   S.updated = new Date().toISOString();
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }
   catch(e){ storeOk = false; document.getElementById("noStore").classList.remove("hide"); }
+  cloudTouch();
 }
+
+/* ---------- GitHubへの自動保存 ----------
+   端末の中の保存（localStorage）だけだと、端末が変わると進捗が分かれてしまう。
+   非公開リポジトリに progress.json を置き、解くたびに（30秒に1回まで）書き戻す。
+   鍵はアプリの中には入れない。こもごもさんが1回だけ貼り、この端末の中にだけ残る。 */
+const CKEY = "gomo_anshou_cloud_v1";
+let C = { owner:"xnrmjghn6b-code", repo:"anshou-progress", path:"progress.json", token:"" };
+try{ Object.assign(C, JSON.parse(localStorage.getItem(CKEY) || "{}")); }catch(e){}
+function cloudOn(){ return !!C.token; }
+function cloudSaveCfg(){ try{ localStorage.setItem(CKEY, JSON.stringify(C)); }catch(e){} }
+
+let cloudSha = null;        // いまリポジトリに載っている版の目印（上書きに要る）
+let cloudBusy = false;
+let cloudDirty = false;
+let cloudTimer = null;
+let cloudLast = "";         // 最後に送った中身（同じなら送らない）
+let cloudState = "";        // 画面に出す一言
+
+function b64enc(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin = "", CH = 0x8000;
+  for(let i = 0; i < bytes.length; i += CH){
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  }
+  return btoa(bin);
+}
+function b64dec(b64){
+  const bin = atob(String(b64).replace(/\s/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+function ghUrl(){
+  return "https://api.github.com/repos/" + C.owner + "/" + C.repo
+       + "/contents/" + encodeURIComponent(C.path);
+}
+function ghFetch(method, body){
+  const opt = { method: method, cache: "no-store", headers: {
+    "Authorization": "Bearer " + C.token,
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28" } };
+  if(body){
+    opt.body = JSON.stringify(body);
+    opt.headers["Content-Type"] = "application/json";
+  }
+  return fetch(ghUrl() + (method === "GET" ? "?t=" + Date.now() : ""), opt);
+}
+function hhmm(){
+  const d = new Date();
+  return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+}
+function paintCloud(){
+  const h = document.getElementById("cloudHdr");
+  if(h) h.textContent = cloudOn() ? ("☁ " + (cloudState || "待機")) : "";
+  const m = document.getElementById("cloudMsg");
+  if(m) m.textContent = cloudState;
+}
+
+/* カード1枚ずつ、進んでいるほう（採点回数が多いほう）を採る。
+   端末をまたいで解いても、どちらかの記録が丸ごと消えることがないようにするため。 */
+function mergeProgress(remote){
+  if(!remote || !remote.cards) return false;
+  let changed = false;
+  Object.keys(remote.cards).forEach(id => {
+    const r = remote.cards[id], l = S.cards[id];
+    if(!l){ S.cards[id] = r; changed = true; return; }
+    const rr = r.reps || 0, lr = l.reps || 0;
+    if(rr > lr || (rr === lr && (r.last || "") > (l.last || ""))){
+      S.cards[id] = r; changed = true;
+    }
+  });
+  // 参照の判定・1日の枚数は、あとから触ったほうを採る
+  if((remote.updated || "") > (S.updated || "")){
+    if(remote.ref){ S.ref = remote.ref; changed = true; }
+    if(remote.cap){ S.cap = remote.cap; changed = true; }
+  }
+  return changed;
+}
+
+async function cloudPull(){
+  if(!cloudOn()) return false;
+  cloudState = "読み込み中"; paintCloud();
+  try{
+    const res = await ghFetch("GET");
+    if(res.status === 404){          // まだ1回も保存していない
+      cloudSha = null;
+      cloudState = "保存はまだ無い";
+      paintCloud();
+      return false;
+    }
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const j = await res.json();
+    cloudSha = j.sha;
+    const changed = mergeProgress(JSON.parse(b64dec(j.content)));
+    if(changed){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+    cloudState = changed ? "取り込んだ " + hhmm() : "同期済み " + hhmm();
+    paintCloud();
+    return changed;
+  }catch(e){
+    cloudState = "読めない（" + e.message + "）";
+    paintCloud();
+    return false;
+  }
+}
+
+async function cloudPush(force){
+  if(!cloudOn() || cloudBusy) return;
+  if(!cloudDirty && !force) return;
+  const text = JSON.stringify(S, null, 1);
+  if(text === cloudLast && !force) { cloudDirty = false; return; }
+  cloudBusy = true; cloudDirty = false;
+  cloudState = "保存中"; paintCloud();
+  try{
+    for(let attempt = 0; attempt < 2; attempt++){
+      const body = { message: "進捗 " + new Date().toISOString().slice(0,16).replace("T"," "),
+                     content: b64enc(text) };
+      if(cloudSha) body.sha = cloudSha;
+      const res = await ghFetch("PUT", body);
+      if(res.ok){
+        const j = await res.json();
+        cloudSha = (j.content && j.content.sha) || null;
+        cloudLast = text;
+        cloudState = "保存した " + hhmm();
+        break;
+      }
+      if((res.status === 409 || res.status === 422) && attempt === 0){
+        await cloudPull();           // 別の端末が先に書いた → 取り込んでからもう一度
+        continue;
+      }
+      throw new Error("HTTP " + res.status);
+    }
+  }catch(e){
+    cloudDirty = true;               // 次の機会に送り直す
+    cloudState = "保存できない（" + e.message + "）";
+  }
+  cloudBusy = false;
+  paintCloud();
+}
+
+function cloudTouch(){
+  if(!cloudOn()) return;
+  cloudDirty = true;
+  if(cloudTimer) return;
+  cloudTimer = setTimeout(() => { cloudTimer = null; cloudPush(); }, 30000);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "hidden") cloudPush();   // 閉じる前に送っておく
+});
 
 /* 全カードを平らに並べ、進捗を初期化・訂正を検出する */
 const CARDS = [];
@@ -891,7 +1042,22 @@ function io(){
   setHdr("");
   hideRail();
   const json = JSON.stringify(S, null, 1);
-  let h = '<div class="card"><div class="book">進捗の書き出し</div>'
+  let h = '<div class="card"><div class="book">GitHubへの自動保存</div>'
+    + '<div class="dim">鍵を1回貼ると、以後は解くたびに自動で '
+    + esc(C.owner + "/" + C.repo) + ' に保存される。'
+    + '起動時には逆に読み込むので、<b>iPhoneとPCの進捗が揃う</b>。'
+    + '鍵はこの端末の中だけに残る（アプリには入っていない）。</div>'
+    + '<div class="row" style="margin-top:.7rem">'
+    + '<input id="tok" type="password" placeholder="鍵（ghp_… / github_pat_…）" '
+    + 'style="flex:1;min-width:12rem;font-size:1rem;padding:.5rem">'
+    + '<button class="primary" id="tokSave">' + (cloudOn() ? "入れ替える" : "保存する") + '</button>'
+    + (cloudOn() ? '<button id="tokDel">やめる</button>' : '')
+    + '</div>'
+    + '<div class="row" style="margin-top:.5rem">'
+    + '<button id="syncNow">いま同期する</button>'
+    + '<span class="dim" id="cloudMsg">' + esc(cloudOn() ? (cloudState || "待機") : "まだ鍵が無い") + '</span>'
+    + '</div></div>';
+  h += '<div class="card"><div class="book">進捗の書き出し</div>'
     + '<div class="dim">カニに見せる用。<b>iPhoneなら「iPhone：共有して保存」</b>を押し、'
     + '「“ファイル”に保存」→ <b>iCloud Drive の「暗唱」フォルダ</b>を選ぶ。'
     + 'PCに同期されるので、カニはそこから読める。'
@@ -905,6 +1071,26 @@ function io(){
     + '<textarea id="in" placeholder="ここに貼る"></textarea>'
     + '<div class="row"><button id="imp">取り込む</button></div></div>';
   view().innerHTML = h;
+  document.getElementById("tokSave").onclick = async () => {
+    const v = document.getElementById("tok").value.trim();
+    if(!v){ cloudState = "鍵が空"; paintCloud(); return; }
+    C.token = v; cloudSaveCfg();
+    document.getElementById("tok").value = "";
+    cloudState = "確かめている"; paintCloud();
+    await cloudPull();
+    await cloudPush(true);
+    io();
+  };
+  const del = document.getElementById("tokDel");
+  if(del) del.onclick = () => {
+    C.token = ""; cloudSaveCfg(); cloudState = ""; cloudSha = null; paintCloud(); io();
+  };
+  document.getElementById("syncNow").onclick = async () => {
+    if(!cloudOn()){ cloudState = "まだ鍵が無い"; paintCloud(); return; }
+    const changed = await cloudPull();
+    await cloudPush(true);
+    if(changed) home(); else paintCloud();
+  };
   const msg = document.getElementById("msg");
   document.getElementById("cp").onclick = () => {
     const ta = document.getElementById("out");
@@ -965,6 +1151,15 @@ document.getElementById("btnHome").onclick = home;
 document.getElementById("btnToc").onclick = toc;
 window.addEventListener("resize", fitRail);   // 画面を回したときに高さを測り直す
 home();
+paintCloud();
+/* 起動のたびに「読み込む → 送り返す」。送信が1回落ちても次に開いたときに追いつく */
+if(cloudOn()){
+  (async () => {
+    const changed = await cloudPull();
+    if(changed){ sync(); home(); }
+    await cloudPush(true);
+  })();
+}
 </script>
 
 </body>
