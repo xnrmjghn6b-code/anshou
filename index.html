@@ -190,6 +190,7 @@
     <span class="grow"></span>
     <span class="dim" id="hdr"></span>
     <span class="dim" id="cloudHdr"></span>
+    <button class="link" id="btnSave">保存</button>
     <button class="link" id="btnToc">目次</button>
     <button class="link" id="btnHome">ホーム</button>
   </header>
@@ -311,7 +312,7 @@ function hhmm(){
 }
 function paintCloud(){
   const h = document.getElementById("cloudHdr");
-  if(h) h.textContent = cloudOn() ? ("☁ " + (cloudState || "待機")) : "";
+  if(h) h.textContent = cloudOn() ? ("☁ " + (cloudState || "待機")) : (cloudState || "");
   const m = document.getElementById("cloudMsg");
   if(m) m.textContent = cloudState;
 }
@@ -1190,6 +1191,15 @@ if(!storeOk) document.getElementById("noStore").classList.remove("hide");
 sync();
 document.getElementById("btnHome").onclick = home;
 document.getElementById("btnToc").onclick = toc;
+/* いつでも手で送れるようにしておく（30秒待たずに確定させたいとき・端末を持ち替えるとき） */
+document.getElementById("btnSave").onclick = async () => {
+  if(!cloudOn()){
+    cloudState = "鍵が無い（書き出し／読み込みで貼る）";
+    paintCloud();
+    return;
+  }
+  await cloudPush(true);
+};
 window.addEventListener("resize", fitRail);   // 画面を回したときに高さを測り直す
 home();
 paintCloud();
