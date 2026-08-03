@@ -125,6 +125,16 @@
   textarea{width:100%;min-height:7rem;font-family:ui-monospace,monospace;font-size:.75rem;
     background:var(--card);color:var(--fg);border:1px solid var(--line);
     border-radius:.5rem;padding:.6rem}
+  /* 疑問・気づきのメモ。判定ボタンのすぐ下に置き、判定を押した時点で一緒に保存する。
+     カニが朝（「おはよう」）読んで返事をし、読んだぶんは消える。 */
+  .memo{margin-top:.9rem}
+  .memo label{display:block;font-size:.76rem;color:var(--dim);margin-bottom:.3rem}
+  .memo textarea{min-height:3.6rem;font-size:.86rem;
+    font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif}
+  .memo .hint{font-size:.7rem;color:var(--dim);margin-top:.25rem}
+  .memoitem{border-bottom:1px solid var(--line);padding:.6rem 0}
+  .memoitem .src{font-size:.72rem;color:var(--dim)}
+  .memoitem .txt{font-size:.88rem;white-space:pre-wrap;margin-top:.2rem}
   .warn{border:1px solid var(--ng);color:var(--ng);border-radius:.5rem;
     padding:.6rem .8rem;font-size:.84rem;margin-bottom:1rem}
   .hide{display:none}
@@ -230,7 +240,7 @@ function daysBetween(a, b){
 }
 
 /* ---------- 進捗 ---------- */
-let S = { v:1, cards:{}, books:{}, updated:"" };
+let S = { v:1, cards:{}, books:{}, memos:[], memosReadAt:"", updated:"" };
 let storeOk = true;
 function load(){
   try{
@@ -335,7 +345,52 @@ function mergeProgress(remote){
     if(remote.ref){ S.ref = remote.ref; changed = true; }
     if(remote.cap){ S.cap = remote.cap; changed = true; }
   }
+  if(mergeMemos(remote)) changed = true;
   return changed;
+}
+
+/* メモは足し算で合わせる（端末をまたいで書いても消えない）。
+   カニが読んだぶんは「ここまで読んだ」という目印（memosReadAt）で落とす——
+   リポジトリ側から消すだけだと、端末に残っている同じメモが次の保存で戻ってきてしまう。 */
+function mergeMemos(remote){
+  let changed = false;
+  S.memos = S.memos || [];
+  if((remote.memosReadAt || "") > (S.memosReadAt || "")){
+    S.memosReadAt = remote.memosReadAt; changed = true;
+  }
+  const gone = S.memosGone = (S.memosGone || []).concat(
+    (remote.memosGone || []).filter(id => !(S.memosGone || []).includes(id))).slice(-200);
+  (remote.memos || []).forEach(m => {
+    if(m && m.id && !gone.includes(m.id) && !S.memos.some(x => x.id === m.id)){
+      S.memos.push(m); changed = true;
+    }
+  });
+  const n0 = S.memos.length;
+  S.memos = S.memos.filter(m => !gone.includes(m.id));   // 手で消したメモは戻さない
+  if(S.memos.length !== n0) changed = true;
+  const n = S.memos.length;
+  S.memos = S.memos.filter(m => !(S.memosReadAt && (m.at || "") <= S.memosReadAt));
+  if(S.memos.length !== n) changed = true;
+  S.memos.sort((a,b) => (a.at || "").localeCompare(b.at || ""));
+  return changed;
+}
+
+/* ---------- 疑問・気づきのメモ ---------- */
+function memoId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function addMemo(text, c, block){
+  S.memos = S.memos || [];
+  S.memos.push({ id: memoId(), at: new Date().toISOString(),
+                 card: (c && c.id) || "", book: (c && c.book && c.book.name) || "",
+                 subject: (c && c.book && c.book.subject) || "",
+                 block: block || (c && c.block) || "", text: text });
+  save();
+}
+function memoCount(){ return (S.memos || []).length; }
+/* 判定ボタンの下に出す入力欄。押した判定と一緒に保存される */
+function memoBox(){
+  return '<div class="memo"><label>疑問・気づき（カニが朝読んで返事をする）</label>'
+       + '<textarea id="memoIn" rows="2" placeholder="ここが腑に落ちない／この規範は○○と違う？　など"></textarea>'
+       + '<div class="hint">判定を押すと一緒に保存される。空なら何も残らない。</div></div>';
 }
 
 async function cloudPull(){
@@ -716,6 +771,7 @@ function home(){
      + '<button class="link" id="btnList">一覧を見る</button>'
      + '<button class="link" id="btnRef">参照の一覧（' + refCards().length + '）</button>'
      + '<button class="link" id="btnIO">書き出し／読み込み</button>'
+     + '<button class="link" id="btnMemo">メモ（' + memoCount() + '）</button>'
      + '<button class="link" id="btnCap">1日の枚数（' + cap() + '）</button></div></div>';
   view().innerHTML = h;
 
@@ -727,6 +783,7 @@ function home(){
   document.getElementById("btnList").onclick = list;
   document.getElementById("btnRef").onclick = refList;
   document.getElementById("btnIO").onclick = io;
+  document.getElementById("btnMemo").onclick = memoList;
   document.getElementById("btnCap").onclick = () => {
     const n = prompt("1日に出す枚数", cap());
     if(n && +n > 0){ S.cap = Math.min(200, +n); save(); home(); }
@@ -745,6 +802,17 @@ function study(queue, back){
     if(i >= queue.length){ done(queue.length, back); return; }
     const c = queue[i];
     const st = S.cards[c.id];
+    // 答えを隠すと入力欄ごと消えるので、書きかけを控えておいて出し直す
+    let memoDraft = "";
+    const memoNow = () => {
+      const el = document.getElementById("memoIn");
+      return el ? el.value : memoDraft;
+    };
+    const flushMemo = () => {
+      const t = String(memoNow() || "").trim();
+      memoDraft = "";
+      if(t) addMemo(t, c);
+    };
     setHdr((i+1) + " / " + queue.length);
     let h = '<div class="card">';
     h += '<div class="meta"><span class="book">' + esc(c.book.name) + '</span>'
@@ -767,9 +835,10 @@ function study(queue, back){
     h += '<div id="ansBox"></div></div>';
     view().innerHTML = h;
     showRail(c);
-    document.getElementById("skip").onclick = () => { i++; one(); };
+    document.getElementById("skip").onclick = () => { flushMemo(); i++; one(); };
     const bk = document.getElementById("back");
     if(bk && i > 0) bk.onclick = () => {
+      flushMemo();
       i--;
       const u = undo.pop();
       // 直前に判定を付けていたら、その採点を取り消してからその札に戻る
@@ -778,12 +847,14 @@ function study(queue, back){
       one();
     };
     document.getElementById("toRef").onclick = () => {
+      flushMemo();
       setRef(c.id, true);           // 条文を読めば済むもの・制度の確認はここで外す
       i++; one();
     };
     let shown = false;
     document.getElementById("reveal").onclick = () => {
       if(shown){                       // もう一度押すと隠れる（自分でもう一周できるように）
+        memoDraft = memoNow();         // 書きかけのメモは消さない
         clearHoles();
         const nb0 = document.getElementById("noteBox");
         if(nb0) nb0.innerHTML = noteList(c.notes, false);
@@ -809,12 +880,16 @@ function study(queue, back){
          + gbtn(5) + gbtn(4) + gbtn(3) + gbtn(2) + gbtn(1)
          + '</div>';
       a += '<div class="dim" style="margin-top:.5rem">いまの間隔 ' + (st.interval||NEW_INTERVAL) + '日</div>';
+      a += memoBox();
       a += '</div>';
       document.getElementById("ansBox").innerHTML = a;
+      const mi = document.getElementById("memoIn");
+      if(mi) mi.value = memoDraft;
       document.getElementById("reveal").textContent = "答えを隠す";
       shown = true;
       view().querySelectorAll("[data-g]").forEach(el => {
         el.onclick = () => {
+          flushMemo();               // メモは判定と一緒に保存する
           undo.push({id:c.id, index:i, state:JSON.parse(JSON.stringify(S.cards[c.id]))});
           grade(c.id, +el.dataset.g);
           i++; one();
@@ -853,11 +928,14 @@ function fullMode(b){
     a += '<div class="grades">'
        + '<button data-g="5">5</button><button data-g="4">4</button>'
        + '<button data-g="3">3</button><button data-g="2">2</button>'
-       + '<button data-g="1">1</button></div></div>';
+       + '<button data-g="1">1</button></div>' + memoBox() + '</div>';
     document.getElementById("ansBox").innerHTML = a;
     document.getElementById("rv").disabled = true;
     view().querySelectorAll("[data-g]").forEach(el => {
       el.onclick = () => {
+        const mi = document.getElementById("memoIn");
+        const mt = mi ? String(mi.value || "").trim() : "";
+        if(mt) addMemo(mt, {id:"", book:b}, "通し");
         const g = +el.dataset.g;
         S.books[b.name] = S.books[b.name] || {};
         S.books[b.name].setsurei = n + 1;
@@ -879,6 +957,34 @@ function fullMode(b){
       };
     });
   };
+}
+
+/* まだカニに読まれていないメモの一覧 */
+function memoList(){
+  setHdr("");
+  hideRail();
+  const ms = (S.memos || []).slice().reverse();
+  let h = '<div class="card"><div class="book">疑問・気づきのメモ（' + ms.length + '）</div>'
+    + '<div class="dim">カニが朝（「おはよう」）読んで返事をする。読まれたぶんはここから消える。'
+    + '<b>いま消すと、カニは読まないまま無くなる。</b></div>';
+  if(!ms.length) h += '<div class="dim" style="margin-top:.8rem">まだメモはありません。</div>';
+  ms.forEach(m => {
+    h += '<div class="memoitem"><div class="src">' + esc((m.at || "").slice(0,16).replace("T"," "))
+       + '　' + esc(m.book || "") + (m.block ? '　' + esc(m.block) : '')
+       + ' <button class="link" data-del="' + esc(m.id) + '">消す</button></div>'
+       + '<div class="txt">' + esc(m.text || "") + '</div></div>';
+  });
+  h += '</div>';
+  view().innerHTML = h;
+  view().querySelectorAll("[data-del]").forEach(el => {
+    el.onclick = () => {
+      // 消した目印を残す（残さないと、別の端末の控えから次の同期で戻ってくる）
+      S.memosGone = ((S.memosGone || []).concat([el.dataset.del])).slice(-200);
+      S.memos = (S.memos || []).filter(x => x.id !== el.dataset.del);
+      save();
+      memoList();
+    };
+  });
 }
 
 /* 参照の一覧（暗唱に出していないもの） */
