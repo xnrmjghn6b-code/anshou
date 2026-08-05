@@ -167,7 +167,16 @@
   .railpanel .kou{color:var(--dim);font-size:.78rem;margin-right:.3rem}
   /* 目次（分野＞論証＞ブロック）。短答アプリの目次と同じ色分けの約束
      ——未＝灰／出来た＝緑／あやふや＝黄／落ちた＝朱／参照＝取り消し線。 */
-  .tocsub{font-size:.72rem;color:var(--dim);letter-spacing:.14em;margin:1.2rem 0 .3rem}
+  /* 科目も畳んだ状態で出す（2026-08-06 こもごもさん指示。科目が増えて目次が長すぎるため）。
+     見た目は従来の科目見出し（小さめ・字間広め・dim）のまま、押せるようにしただけ。 */
+  details.subject{margin:1.2rem 0 .3rem}
+  details.subject>summary{cursor:pointer;font-size:.72rem;color:var(--dim);letter-spacing:.14em;
+    list-style:none;display:flex;gap:.45rem;align-items:baseline;padding:.3rem 0}
+  details.subject>summary::-webkit-details-marker{display:none}
+  details.subject>summary::before{content:"▸";letter-spacing:0}
+  details.subject[open]>summary::before{content:"▾"}
+  details.subject>summary .n{letter-spacing:0;
+    font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif}
   details.field{border:1px solid var(--line);border-radius:.6rem;background:var(--card);
     margin-bottom:.5rem;padding:.5rem .7rem}
   details.field>summary{cursor:pointer;font-weight:700;font-size:.95rem;color:var(--accent);
@@ -1082,7 +1091,8 @@ function toc(){
   hideRail();
   const t = today();
   let h = '<div class="card"><div class="book">目次</div>'
-    + '<div class="dim">好きなところから始める。<b>ブロックを押すと、その論証の最後まで</b>'
+    + '<div class="dim"><b>科目 → 分野の順に押して開く。</b>好きなところから始める。'
+    + '<b>ブロックを押すと、その論証の最後まで</b>'
     + '順に出す。論証名を押せばその論証の頭から、「この分野を丸ごと出す」で分野ぜんぶ。'
     + '採点と期日の伸び方は今日の分とまったく同じ。</div>'
     + '<div class="dim" style="margin-top:.4rem">'
@@ -1092,9 +1102,25 @@ function toc(){
     + '<span class="chip ng" style="cursor:default">1-2</span> 出ない　'
     + '<span class="chip ref" style="cursor:default">参</span> 参照　'
     + '<span class="dot">●</span> 期日到来</div></div>';
+  const groups = tocGroups();
+  // 科目ごとの合計（畳んだままでも「どこに何枚あって、何枚が期日か」が見えるように summary に出す）
+  const subN = {};
+  groups.forEach(g => {
+    const mine = g.books.reduce((a, b) => a.concat(cardsOf(b)), []).filter(c => !isRef(c));
+    const s = subN[g.subject] || (subN[g.subject] = {n:0, due:0});
+    s.n += mine.length;
+    s.due += mine.filter(c => S.cards[c.id].due <= t).length;
+  });
   let sub = null;
-  tocGroups().forEach((g, gi) => {
-    if(g.subject !== sub){ sub = g.subject; h += '<div class="tocsub">' + esc(sub) + '</div>'; }
+  groups.forEach((g, gi) => {
+    // 科目が変わったら、前の科目を閉じて次の科目を開く（科目は既定で畳む）
+    if(g.subject !== sub){
+      if(sub !== null) h += '</details>';
+      sub = g.subject;
+      const s = subN[sub];
+      h += '<details class="subject"><summary>' + esc(sub)
+         + '<span class="n">' + s.n + '枚' + (s.due ? '・期日 ' + s.due : '') + '</span></summary>';
+    }
     const cs = g.books.reduce((a, b) => a.concat(cardsOf(b)), []);
     const mine = cs.filter(c => !isRef(c));
     const due = mine.filter(c => S.cards[c.id].due <= t).length;
@@ -1123,8 +1149,8 @@ function toc(){
     });
     h += '</details>';
   });
+  if(sub !== null) h += '</details>';   // 最後の科目を閉じる
   view().innerHTML = h;
-  const groups = tocGroups();
   view().querySelectorAll("[data-g]").forEach(el => {
     el.onclick = () => startToc(groups[+el.dataset.g].books, 0);
   });
