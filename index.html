@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
+<!-- スマホのブラウザが古い版を握り続けないようにする（2026-08-06）。
+     GitHub Pages は HTTP ヘッダを設定できないので meta で頼むしかなく、
+     これだけでは確実ではない。最新を確実に見るには URL 末尾の ?v=… を使う
+     （publish_pages.py が実行のたびに表示する）。 -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-title" content="論証暗唱">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
