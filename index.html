@@ -176,14 +176,22 @@
      ——未＝灰／出来た＝緑／あやふや＝黄／落ちた＝朱／参照＝取り消し線。 */
   /* 科目も畳んだ状態で出す（2026-08-06 こもごもさん指示。科目が増えて目次が長すぎるため）。
      見た目は従来の科目見出し（小さめ・字間広め・dim）のまま、押せるようにしただけ。 */
-  details.subject{margin:1.2rem 0 .3rem}
-  details.subject>summary{cursor:pointer;font-size:.72rem;color:var(--dim);letter-spacing:.14em;
-    list-style:none;display:flex;gap:.45rem;align-items:baseline;padding:.3rem 0}
+  /* 分野と同じ「箱」の作りにして、押せることが見て分かるようにする（2026-08-06 こもごもさん指示。
+     畳んだときに文字だけだと、押せる見出しに見えなかった）。
+     階層が分かるよう、科目の箱は淡いアクセント色・分野の箱は紙色にして重ねる。 */
+  details.subject{border:1px solid var(--line);border-radius:.6rem;background:var(--accent-soft);
+    margin:1rem 0 .6rem;padding:.55rem .7rem}
+  details.subject>summary{cursor:pointer;font-size:.95rem;font-weight:700;color:var(--accent);
+    letter-spacing:.06em;list-style:none;display:flex;gap:.5rem;align-items:baseline}
   details.subject>summary::-webkit-details-marker{display:none}
-  details.subject>summary::before{content:"▸";letter-spacing:0}
+  details.subject>summary::before{content:"▸";letter-spacing:0;font-size:.85em}
   details.subject[open]>summary::before{content:"▾"}
-  details.subject>summary .n{letter-spacing:0;
+  details.subject>summary .n{margin-left:auto;letter-spacing:0;font-weight:400;font-size:.76rem;
+    color:var(--dim);
     font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif}
+  /* 開いたら見出しの下に区切りを入れて、箱が開いたことを分かりやすくする */
+  details.subject[open]>summary{margin-bottom:.55rem;padding-bottom:.45rem;
+    border-bottom:1px solid var(--line)}
   details.field{border:1px solid var(--line);border-radius:.6rem;background:var(--card);
     margin-bottom:.5rem;padding:.5rem .7rem}
   details.field>summary{cursor:pointer;font-weight:700;font-size:.95rem;color:var(--accent);
