@@ -663,18 +663,41 @@ function srcBadge(c){
   if(c.notes && c.notes.length) return ' <span class="pill case">判例法理</span>';
   return "";
 }
-/* その論証が根拠にしている判例の一覧（答えを見たあとに畳んで出す） */
-function hanreiBox(b){
-  const rows = b.hanrei || [];
-  if(!rows.length) return "";
-  let h = '<details class="hanrei"><summary>この論証の根拠判例（' + rows.length
-        + '）</summary><div class="scroll"><table>';
+/* その論証が根拠にしている判例の一覧（答えを見たあとに畳んで出す）
+
+   notes を渡すと「このブロックの根拠」と「他のブロックの根拠」に割る。
+   論証1本ぶんの表をどのブロックでも丸ごと出すと、
+   ブロック単位で見たときにどれが根拠か分からなくなる（2026-08-07 こもごもさん指摘）。 */
+function hanreiTable(rows){
+  let t = '<div class="scroll"><table>';
   rows.forEach(r => {
-    h += '<tr><td class="nm">' + md(r[0]) + '</td><td>'
+    t += '<tr><td class="nm">' + md(r[0]) + '</td><td>'
        + md(r[1]) + (r[2] ? '<br><span class="dim">' + md(r[2]) + '</span>' : '')
        + '</td></tr>';
   });
-  return h + '</table></div></details>';
+  return t + '</table></div>';
+}
+function hanreiBox(b, notes){
+  const rows = b.hanrei || [];
+  if(!rows.length) return "";
+  // 注釈が判例表に無いときは case が空なので、その場合は label で照合する
+  const mine = new Set((notes || []).map(n => n.case || n.label).filter(Boolean));
+  const hit  = mine.size ? rows.filter(r => mine.has(r[0])) : [];
+  const rest = mine.size ? rows.filter(r => !mine.has(r[0])) : rows;
+  // 通しモード、または注釈が1つも表に当たらなかったとき＝従来どおり1本の表
+  if(!hit.length){
+    return '<details class="hanrei"><summary>この論証の根拠判例（' + rows.length
+         + '）</summary>' + hanreiTable(rows) + '</details>';
+  }
+  let h = '<details class="hanrei" open><summary>このブロックの根拠判例（' + hit.length
+        + '）</summary>' + hanreiTable(hit) + '</details>';
+  if(rest.length){
+    // 他ブロックの根拠と、参考判例（どのブロックの根拠でもない）が混ざる。
+    // 「他のブロックの根拠」と言い切ると参考判例まで根拠に見えるので、そう書かない
+    h += '<details class="hanrei"><summary>この論証の他の判例（' + rest.length
+       + '）／このブロックの根拠ではない</summary>' + hanreiTable(rest) + '</details>';
+  }
+  return h;
 }
 function rankLine(rank){
   if(rank === "A") return "ランクA（合格ライン＝4以上・条文の項号と理由付けまで）";
@@ -914,7 +937,7 @@ function study(queue, back){
       }
       if(c.check) a += '<div class="check">' + md(c.check) + '</div>';
       if(!c.check && c.book.kata) a += '<div class="check">この論証の採点チェックリストは「型の骨組み」表を見る。</div>';
-      a += hanreiBox(c.book);
+      a += hanreiBox(c.book, c.notes);
       a += '<div class="grades">'
          + gbtn(5) + gbtn(4) + gbtn(3) + gbtn(2) + gbtn(1)
          + '</div>';
