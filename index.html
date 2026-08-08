@@ -379,9 +379,10 @@ function mergeProgress(remote){
       S.cards[id] = r; changed = true;
     }
   });
-  // 参照の判定・1日の枚数は、あとから触ったほうを採る
+  // 参照の判定・外した前提・1日の枚数は、あとから触ったほうを採る
   if((remote.updated || "") > (S.updated || "")){
     if(remote.ref){ S.ref = remote.ref; changed = true; }
+    if(remote.nopre){ S.nopre = remote.nopre; changed = true; }
     if(remote.cap){ S.cap = remote.cap; changed = true; }
   }
   if(mergeMemos(remote)) changed = true;
@@ -717,16 +718,36 @@ function setHdr(s){ document.getElementById("hdr").textContent = s || ""; }
    第2「しかし、…」・第3「もっとも、…」は第1を受けており、単独では文として立たない。
    前提が見えないまま穴だけ出すと、思い出せないのが知識の穴なのか文脈の欠落なのかが
    切り分けられない（暗唱アプリのメモ 2026-08-07「一つ前の論証が前提にはいるべきでは？」）。
-   自分より後ろのブロックは入れない（先の答えが見えてしまうため）。 */
-function premises(c){
+   自分より後ろのブロックは入れない（先の答えが見えてしまうため）。
+   先行ブロックのうち「これは前提に不要」と外したものは出さない（下の preOff）。 */
+function premises(c, withOff){
   const b = c.book, out = [];
   b.cards.forEach(x => {
     const card = Object.assign({book:b}, x);
     if(x.id === c.id) return;                 // 出題中のブロック自身は出さない
     if(isRef(card)){ out.push(x); return; }   // (1) 参照ブロックは前後を問わず前提
-    if(c.id && b.cards.indexOf(x) < b.cards.findIndex(y => y.id === c.id)) out.push(x); // (2)
+    if(!c.id) return;
+    if(b.cards.indexOf(x) >= b.cards.findIndex(y => y.id === c.id)) return;
+    if(!withOff && preOff(c.id, x.id)) return;   // 外したものは隠す
+    out.push(x);                                 // (2)
   });
   return out;
+}
+
+/* 「これは前提に不要」で外した組（2026-08-08 こもごもさん提案）。
+   いまは先行ブロックを機械的に全部入れているが、本当の前提はその一部
+   （例＝第5に要るのは第1・第2・第4だけで、第3は並列の場面）。
+   どれが要らないかは本文を読んでも微妙な判断が続くので、**暗唱しながら本人が外す**。
+   外した記録はそのまま `課題一覧.md` D-6 の依存関係台帳の一次資料になる
+   （カニが70本を読んで推測するより確度が高い）。
+   鍵は「どのカードの前提としてか」まで含める——第5に第3が要らなくても、
+   第6には要ることがあるため。 */
+function preKey(cid, pid){ return cid + "|" + pid; }
+function preOff(cid, pid){ return !!(S.nopre && S.nopre[preKey(cid, pid)]); }
+function setPreOff(cid, pid, v){
+  S.nopre = S.nopre || {};
+  if(v) S.nopre[preKey(cid, pid)] = 1; else delete S.nopre[preKey(cid, pid)];
+  save();
 }
 let railOpen = null;
 function hideRail(){
@@ -739,11 +760,13 @@ function showRail(c){
   const rail = document.getElementById("rail");
   const cites = (c.cites || []).filter(k => LAWS[k]);
   const refs = premises(c);
+  // 全部を外していてもボタンは残す（消すと「もどす」に辿り着けなくなる）
+  const any = premises(c, true).length;
   // ボタンは2個まで（条文・前提）。条文が9本あっても列が伸びないので横スクロールが要らない
   let h = '<span class="tag">ヒント</span>';
-  if(!cites.length && !refs.length) h += '<span class="dim">なし</span>';
+  if(!cites.length && !any) h += '<span class="dim">なし</span>';
   if(cites.length) h += '<button data-arts="1">条文（' + cites.length + '）</button>';
-  if(refs.length) h += '<button data-refs="1">この論証の前提（' + refs.length + '）</button>';
+  if(any) h += '<button data-refs="1">この論証の前提（' + refs.length + '）</button>';
   rail.innerHTML = h;
   rail.classList.remove("hide");
   document.getElementById("railpanel").classList.add("hide");
@@ -815,9 +838,21 @@ function openRefs(c, rail){
        + '<span class="dim" style="margin-left:.4rem">'
        + (ref ? '参照（暗唱の対象外）' : '前のブロック（これ自体も暗唱の対象）') + '</span>'
        + '<div class="body">' + deco(holes(hideAnswers(x.body, c), null), null) + '</div>'
-       + (ref ? '<button class="link" data-back="' + esc(x.id) + '">これは暗唱したい</button>' : '')
+       + (ref ? '<button class="link" data-back="' + esc(x.id) + '">これは暗唱したい</button>'
+              : '<button class="link" data-off="' + esc(x.id) + '">これは前提に不要</button>')
        + '</div>';
   });
+  // 外したものは畳んで下に置く。押し間違いを戻せるようにするため（消してしまわない）
+  const off = premises(c, true).filter(x => c.id && preOff(c.id, x.id));
+  if(off.length){
+    h += '<details style="margin-top:1rem"><summary class="dim">外した前提（'
+       + off.length + '）</summary>';
+    off.forEach(x => {
+      h += '<div class="art" style="margin-top:.6rem"><b>' + esc(x.block) + '</b>'
+         + '<button class="link" data-on="' + esc(x.id) + '">もどす</button></div>';
+    });
+    h += '</details>';
+  }
   h += '</div>';
   p.innerHTML = h;
   p.classList.remove("hide");
@@ -826,6 +861,14 @@ function openRefs(c, rail){
   p.querySelectorAll("[data-close]").forEach(el => { el.onclick = () => hideRailPanel(rail); });
   p.querySelectorAll("[data-back]").forEach(el => {
     el.onclick = () => { setRef(el.dataset.back, false); railOpen = null; openRefs(c, rail); };
+  });
+  // 前提から外す／もどす。押したらその場で開き直して、ヒント列の件数も数え直す
+  const redraw = () => { railOpen = null; showRail(c); openRefs(c, rail); };
+  p.querySelectorAll("[data-off]").forEach(el => {
+    el.onclick = () => { setPreOff(c.id, el.dataset.off, true); redraw(); };
+  });
+  p.querySelectorAll("[data-on]").forEach(el => {
+    el.onclick = () => { setPreOff(c.id, el.dataset.on, false); redraw(); };
   });
 }
 function hideRailPanel(rail){
