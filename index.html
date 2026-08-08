@@ -1589,9 +1589,9 @@ function paintTheme(){
   const dark = document.documentElement.dataset.theme === "dark";
   const b = document.getElementById("btnTheme");
   if(b){
-    // ☀ は端末によって絵文字（色付き）で描かれるので、字として描かせる指示（U+FE0E）を足す。
-    // ☾ には絵文字の形が無いのでそのままで単色になる
-    b.textContent = dark ? "☀︎" : "☾";
+    // ☀（U+2600）は端末によって絵文字（色付き）で描かれてしまうので使わない。
+    // ☼（U+263C）と☾（U+263E）には絵文字の形が無く、どの端末でも単色の字として出る
+    b.textContent = dark ? "☼" : "☾";
     b.title = dark ? "紙の色に戻す" : "暗くする";
   }
   // iPhoneでホーム画面から開いたときの上下の帯の色も合わせる（合わせないと白いままで浮く）
