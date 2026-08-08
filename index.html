@@ -346,6 +346,7 @@ function daysBetween(a, b){
 /* ---------- 進捗 ---------- */
 let S = { v:1, cards:{}, books:{}, memos:[], memosReadAt:"", updated:"" };
 let storeOk = true;
+let relinked = [];          // 起動時に引っ越した記録（ホームに1行出す）
 function load(){
   try{
     const raw = localStorage.getItem(KEY);
@@ -461,17 +462,41 @@ function mergeProgress(remote){
     const r = remote.cards[id], l = S.cards[id];
     if(!l){ S.cards[id] = r; changed = true; return; }
     const rr = r.reps || 0, lr = l.reps || 0;
-    if(rr > lr || (rr === lr && (r.last || "") > (l.last || ""))){
+    // 回数が同じときは「後に解いたほう」を採る。時刻を持っている記録どうしなら時刻で、
+    // 片方しか持っていないなら日付で比べる（時刻つきが日付だけに常勝しないように）
+    const both = r.lastAt && l.lastAt;
+    const rt = both ? r.lastAt : (r.last || ""), lt = both ? l.lastAt : (l.last || "");
+    if(rr > lr || (rr === lr && rt > lt)){
       S.cards[id] = r; changed = true;
     }
   });
-  // 参照の判定・外した前提・1日の枚数は、あとから触ったほうを採る
-  if((remote.updated || "") > (S.updated || "")){
-    if(remote.ref){ S.ref = remote.ref; changed = true; }
-    if(remote.nopre){ S.nopre = remote.nopre; changed = true; }
-    if(remote.cap){ S.cap = remote.cap; changed = true; }
-  }
+  // 参照の判定・外した前提は、表を丸ごと差し替えずに「キー1個ずつ」合わせる。
+  // 丸ごと差し替えていたので、端末をまたぐと片方の判断が全部消えていた
+  // （2026-08-08 こもごもさんのバグ報告で発覚）
+  if(mergeMap("ref", remote))   changed = true;
+  if(mergeMap("nopre", remote)) changed = true;
+  if((remote.updated || "") > (S.updated || "") && remote.cap){ S.cap = remote.cap; changed = true; }
   if(mergeMemos(remote)) changed = true;
+  return changed;
+}
+
+/* 「参照に回した」「これは前提に不要」の表を、キー1個ずつ合わせる。
+   押した時刻（refAt / nopreAt）が新しいほうを採る。時刻を持っていない古い記録は、
+   その保存全体の時刻（updated）を代わりに使う。
+   ⚠️ こちらに無いキーは無条件に受け入れる（相手だけが知っている判断を捨てない）。 */
+function mergeMap(name, remote){
+  const at = name + "At", r = remote[name];
+  if(!r) return false;
+  const rAt = remote[at] || {};
+  S[name] = S[name] || {}; S[at] = S[at] || {};
+  let changed = false;
+  Object.keys(r).forEach(k => {
+    const rt = rAt[k] || (remote.updated || "");
+    const lt = S[at][k] || "";
+    if((k in S[name]) && !(rt > lt)) return;      // こちらのほうが新しい → 触らない
+    if(S[name][k] !== r[k]){ S[name][k] = r[k]; changed = true; }
+    if(S[at][k] !== rt){ S[at][k] = rt; changed = true; }
+  });
   return changed;
 }
 
@@ -599,17 +624,71 @@ const LAWS = DATA.laws || {};
    既定は build_cards.py の判定（条文の引き写し・覚える語の指定なし）で、
    こもごもさんが押した結果が常にそれに勝つ。 */
 function isRef(c){
-  if(S.ref && S.ref[c.id] !== undefined) return S.ref[c.id];
+  if(S.ref && S.ref[c.id] !== undefined) return !!S.ref[c.id];
   return !!c.ref;
+}
+/* 押した時刻も一緒に残す。端末をまたいだとき、表を丸ごと差し替えるのではなく
+   「キー1個ずつ、後に押したほうを採る」ために要る（2026-08-08 バグ修正）。 */
+function stamp(name, k){
+  const at = name + "At";
+  S[at] = S[at] || {};
+  S[at][k] = new Date().toISOString();
 }
 function setRef(id, v){
   S.ref = S.ref || {};
   S.ref[id] = v;
+  stamp("ref", id);
   save();
+}
+
+/* ---------- 記録の引っ越し（ブロックがずれたときの自己修復） ----------
+   カードのIDは「科目/論証名#何番目のブロック」なので、論証にブロックを1つ挿し込むと
+   それ以降のIDが1つずつずれ、解いた記録が隣のブロックに付いてしまう
+   （末尾の1枚は記録なしになる。2026-08-08 こもごもさんのバグ報告を追って発見）。
+   そこで起動のたびに、本文のハッシュを手がかりに記録を正しいブロックへ引っ越す。
+
+   ⚠️ 記録は絶対に捨てない。行き先が決まらなかった記録は、名前をずらしてでも必ず残す。
+   ⚠️ 中身が同じブロックが2つ以上あるときは引っ越さない（取り違えるくらいなら動かさない）。
+   純粋な関数にしてあるのは、本物の進捗を触らずに動きを試せるようにするため。 */
+function relinkCards(store, cards){
+  const used = {}, out = {}, moved = [];
+  cards.forEach(c => {                       // (1) IDも中身も合っているものは動かさない
+    const st = store[c.id];
+    if(st && st.hash === c.hash){ out[c.id] = st; used[c.id] = 1; }
+  });
+  const pool = {};                           // (2) 余った「解いたことのある記録」を中身で引く
+  Object.keys(store).forEach(id => {
+    const st = store[id];
+    if(used[id] || !st || !st.hash || !st.reps) return;
+    (pool[st.hash] = pool[st.hash] || []).push(id);
+  });
+  cards.forEach(c => {
+    if(out[c.id]) return;
+    const cand = pool[c.hash];
+    if(cand && cand.length === 1 && !used[cand[0]]){
+      out[c.id] = store[cand[0]];
+      used[cand[0]] = 1;
+      if(cand[0] !== c.id) moved.push([cand[0], c.id]);
+    }
+  });
+  cards.forEach(c => {                       // (3) 決まらなければ同じIDの記録をそのまま
+    if(out[c.id] || used[c.id] || !store[c.id]) return;
+    out[c.id] = store[c.id]; used[c.id] = 1;
+  });
+  Object.keys(store).forEach(id => {         // (4) 行き先の無い記録も捨てずに置いておく
+    if(used[id]) return;
+    let k = id;
+    while(out[k]) k += "＋";
+    out[k] = store[id];
+  });
+  return {cards: out, moved: moved};
 }
 
 function sync(){
   let fixed = 0;
+  const re = relinkCards(S.cards, CARDS);
+  S.cards = re.cards;
+  relinked = re.moved;
   CARDS.forEach(c => {
     let st = S.cards[c.id];
     if(!st){
@@ -631,7 +710,7 @@ function sync(){
   Object.keys(S.cards).forEach(id => {   // 消えた論証の進捗は残しておく（害がない）
     if(!CARDS.some(c => c.id === id)) S.cards[id].gone = true;
   });
-  if(fixed) save();
+  if(fixed || relinked.length) save();
   return fixed;
 }
 
@@ -672,6 +751,7 @@ function grade(id, g){
   st.reps = (st.reps || 0) + 1;
   st.streak5 = (g === 5) ? (st.streak5 || 0) + 1 : 0;
   st.last = today();
+  st.lastAt = new Date().toISOString();   // 同じ日に2端末で解いても片方が消えないように
   delete st.fixed;
   st.hist = (st.hist || []).concat([[today(), g]]).slice(-10);
   save();
@@ -867,7 +947,10 @@ function preKey(cid, pid){ return cid + "|" + pid; }
 function preOff(cid, pid){ return !!(S.nopre && S.nopre[preKey(cid, pid)]); }
 function setPreOff(cid, pid, v){
   S.nopre = S.nopre || {};
-  if(v) S.nopre[preKey(cid, pid)] = 1; else delete S.nopre[preKey(cid, pid)];
+  // 「もどす」でもキーは消さずに 0 を入れる（2026-08-08 バグ修正）。
+  // 消すと、もう一方の端末に残っている古い表から次の同期でまた戻ってきてしまう
+  S.nopre[preKey(cid, pid)] = v ? 1 : 0;
+  stamp("nopre", preKey(cid, pid));
   save();
 }
 let railOpen = null;
@@ -1018,6 +1101,9 @@ function home(){
   h += '<div class="dim">条文のあてはめ・制度の確認 ' + refCards().length
      + ' 枚は暗唱に出さず、問題を解いている画面の下端から引ける。</div>';
   if(fixedN) h += '<div class="dim">論証が直されたカード ' + fixedN + ' 枚を ' + FIX_INTERVAL + '日後に戻した</div>';
+  // ブロックがずれたときに記録を正しい札へ引っ越した報告。黙って直すと気づけないので出す
+  if(relinked.length) h += '<div class="dim">ブロックの位置が動いたので、解いた記録 '
+    + relinked.length + ' 件を正しい札に付け替えた</div>';
   h += '<div class="row" style="margin-top:1rem">';
   h += d.length ? '<button class="primary" id="go">はじめる</button>'
                 : '<span class="dim">期日が来ているカードはありません。</span>';
