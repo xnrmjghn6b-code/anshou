@@ -145,11 +145,13 @@
   .check{font-size:.86rem;color:var(--dim);margin-top:.7rem;
     border-left:3px solid var(--line);padding-left:.7rem}
   /* 争いアリ。学説が固まっていないブロックにだけ出す目印（2026-08-08）。
-     これが出ていないカードは、対立構造を開かなくてよい */
-  .arasoi{font-size:.86rem;font-weight:700;color:var(--accent);margin-top:.7rem;
-    border-left:3px solid var(--accent);padding-left:.7rem}
-  .arasoi span{display:block;font-size:.74rem;font-weight:400;color:var(--dim);
-    margin-top:.15rem}
+     これが出ていないカードは、対立構造を開かなくてよい。
+     目印は独立した帯ではなく「対立構造」の見出しそのもの（2026-08-08 第3弾）。
+     出る条件が完全に同じで、別々に置くと同じことを2回言うことになるため */
+  details.gaku.arasoi{border-left:3px solid var(--accent);padding-left:.7rem}
+  details.gaku.arasoi>summary{font-size:.86rem;font-weight:700;color:var(--accent)}
+  details.gaku.arasoi>summary span{display:block;font-size:.74rem;font-weight:400;
+    color:var(--dim);margin-top:.15rem}
   .grades{display:flex;gap:.4rem;margin-top:1rem}
   .grades button{flex:1;font-size:1.15rem;font-weight:700;padding:.7rem .2rem}
   .glabel{display:block;font-size:.62rem;font-weight:400;color:var(--dim);margin-top:.2rem}
@@ -755,20 +757,22 @@ function hanreiBox(b, notes){
    全カードに出すと第1も第2も争っているように見える。どのブロックの話かは
    `対立構造の対応表.md` で決め、build_cards.py が card.arasoi に落としている。
    判例通説で固まっているブロックでは、そもそも開く必要がない。 */
+/* ブロック単位のときは、見出しそのものを「⚖ 争いアリ」にする（2026-08-08 第3弾）。
+   以前は別建ての帯（arasoiBadge）で「下の対立構造を開け」と案内していたが、
+   帯が出る条件（arasoi かつ 学説節あり）と、この枠が出る条件が完全に同じだったので、
+   同じことを2回言っていた。見出しが合図を兼ねる形に一本化した。
+   枠が出ていない＝判例通説で固まっている、という保証は変わらない。 */
 function gakuBox(c){
   const b = c && c.book ? c.book : c;              // カードでも本でも受ける（通しモード用）
   if(!b || !b.gakusetsu) return "";
-  if(c && c.book && !c.arasoi) return "";          // 争いの無いブロックには出さない
-  return '<details class="gaku"><summary>対立構造と自説の優位性'
-       + '（出典つき）</summary>' + b.gakusetsu + '</details>';
-}
-/* 「争いアリ」の合図。ここを見て初めて対立構造を開いてもらう。
-   バッジが無い＝判例通説で固まっている、という保証になる。 */
-function arasoiBadge(c){
-  if(!c.arasoi || !c.book.gakusetsu) return "";
-  return '<div class="arasoi">⚖ 争いアリ'
-       + '<span>— 下の「対立構造と自説の優位性」を開いて、反対説と採らない理由を確認する</span>'
-       + '</div>';
+  const block = !!(c && c.book);
+  if(block && !c.arasoi) return "";                // 争いの無いブロックには出さない
+  // 通しは論証まるごとなので、どのブロックが争っているかを名乗れない。従来の見出しのまま
+  const sum = block
+    ? '⚖ 争いアリ<span>反対説と、それを採らない理由を確認する（出典つき）</span>'
+    : '対立構造と自説の優位性（出典つき）';
+  return '<details class="gaku' + (block ? ' arasoi' : '') + '"><summary>' + sum
+       + '</summary>' + b.gakusetsu + '</details>';
 }
 function rankLine(rank){
   if(rank === "A") return "ランクA（合格ライン＝4以上・条文の項号と理由付けまで）";
@@ -1090,9 +1094,7 @@ function study(queue, back){
       if(c.check) a += '<div class="check">' + md(c.check) + '</div>';
       // 「採点チェックリストは型の骨組み表を見る」という案内は消した（2026-08-08）。
       // どこを見ればいいのか分からず場所を取るだけだったので、その枠を「争いアリ」に譲る
-      // 争いアリのときに開く「対立構造」を判例表より上に置く（2026-08-08 こもごもさん指示）。
-      // バッジ → 対立構造 → 判例、の順に読めるようにするため
-      a += arasoiBadge(c);
+      // 争いアリのときに開く「対立構造」を判例表より上に置く（2026-08-08 こもごもさん指示）
       a += gakuBox(c);
       a += hanreiBox(c.book, c.notes);
       a += '<div class="grades">'
