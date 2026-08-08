@@ -707,8 +707,27 @@ function rankLine(rank){
 function setHdr(s){ document.getElementById("hdr").textContent = s || ""; }
 
 /* ---------- 画面の下端のヒント列 ---------- */
-/* 詰まったときに引くもの。条文の本文と、参照に回したブロック（制度の確認）。
-   暗唱の答えはここに出さない（想起テストを壊さないため）。 */
+/* 詰まったときに引くもの。条文の本文と、そのブロックの前提。
+   いま出題されているブロックの答えはここに出さない（想起テストを壊さないため）。 */
+
+/* このカードの「前提」を集める。
+   (1) 参照に回したブロック（条文のあてはめ・制度の確認）
+   (2) 同じ論証の、このブロックより前のブロック — **暗唱対象であっても入れる**
+   (2) は 2026-08-08 こもごもさん指示で追加した。論証は前から順に積み上がる文章なので、
+   第2「しかし、…」・第3「もっとも、…」は第1を受けており、単独では文として立たない。
+   前提が見えないまま穴だけ出すと、思い出せないのが知識の穴なのか文脈の欠落なのかが
+   切り分けられない（暗唱アプリのメモ 2026-08-07「一つ前の論証が前提にはいるべきでは？」）。
+   自分より後ろのブロックは入れない（先の答えが見えてしまうため）。 */
+function premises(c){
+  const b = c.book, out = [];
+  b.cards.forEach(x => {
+    const card = Object.assign({book:b}, x);
+    if(x.id === c.id) return;                 // 出題中のブロック自身は出さない
+    if(isRef(card)){ out.push(x); return; }   // (1) 参照ブロックは前後を問わず前提
+    if(c.id && b.cards.indexOf(x) < b.cards.findIndex(y => y.id === c.id)) out.push(x); // (2)
+  });
+  return out;
+}
 let railOpen = null;
 function hideRail(){
   railOpen = null;
@@ -719,7 +738,7 @@ function hideRail(){
 function showRail(c){
   const rail = document.getElementById("rail");
   const cites = (c.cites || []).filter(k => LAWS[k]);
-  const refs = c.book.cards.filter(x => isRef(Object.assign({book:c.book}, x)));
+  const refs = premises(c);
   // ボタンは2個まで（条文・前提）。条文が9本あっても列が伸びないので横スクロールが要らない
   let h = '<span class="tag">ヒント</span>';
   if(!cites.length && !refs.length) h += '<span class="dim">なし</span>';
@@ -733,7 +752,7 @@ function showRail(c){
   const ab = rail.querySelector("[data-arts]");
   if(ab) ab.onclick = () => openArts(cites, rail);
   const rb = rail.querySelector("[data-refs]");
-  if(rb) rb.onclick = () => openRefs(c.book, rail);
+  if(rb) rb.onclick = () => openRefs(c, rail);
 }
 /* ヒント列の高さを測って、パネルの位置と本文の余白に反映する（折り返しても重ならない） */
 function fitRail(){
@@ -767,17 +786,23 @@ function openArts(keys, rail){
   markOn(rail, rail.querySelector("[data-arts]"));
   p.querySelectorAll("[data-close]").forEach(el => { el.onclick = () => hideRailPanel(rail); });
 }
-function openRefs(b, rail){
+function openRefs(c, rail){
+  const b = c.book;
   const p = document.getElementById("railpanel");
   if(railOpen === "__refs"){ hideRailPanel(rail); return; }
-  const refs = b.cards.filter(x => isRef(Object.assign({book:b}, x)));
+  const refs = premises(c);
   let h = '<div class="wrapin"><h3>' + esc(b.name) + '　前提の確認<span class="grow"></span>'
         + '<button class="close" data-close="1">閉じる</button></h3>'
-        + '<div class="dim">条文のあてはめ・制度の確認。暗唱の対象ではない。</div>';
-  refs.forEach(c => {
-    h += '<div class="art" style="margin-top:.8rem"><b>' + esc(c.block) + '</b>'
-       + '<div class="body">' + deco(emph(c.body), null) + '</div>'
-       + '<button class="link" data-back="' + esc(c.id) + '">これは暗唱したい</button></div>';
+        + '<div class="dim">ここまでに積み上がっている前提。'
+        + 'いま出題されているブロックの答えは出していない。</div>';
+  refs.forEach(x => {
+    const ref = isRef(Object.assign({book:b}, x));
+    h += '<div class="art" style="margin-top:.8rem"><b>' + esc(x.block) + '</b>'
+       + '<span class="dim" style="margin-left:.4rem">'
+       + (ref ? '参照（暗唱の対象外）' : '前のブロック（これ自体も暗唱の対象）') + '</span>'
+       + '<div class="body">' + deco(emph(x.body), null) + '</div>'
+       + (ref ? '<button class="link" data-back="' + esc(x.id) + '">これは暗唱したい</button>' : '')
+       + '</div>';
   });
   h += '</div>';
   p.innerHTML = h;
@@ -786,7 +811,7 @@ function openRefs(b, rail){
   markOn(rail, rail.querySelector("[data-refs]"));
   p.querySelectorAll("[data-close]").forEach(el => { el.onclick = () => hideRailPanel(rail); });
   p.querySelectorAll("[data-back]").forEach(el => {
-    el.onclick = () => { setRef(el.dataset.back, false); openRefs(b, rail); };
+    el.onclick = () => { setRef(el.dataset.back, false); railOpen = null; openRefs(c, rail); };
   });
 }
 function hideRailPanel(rail){
