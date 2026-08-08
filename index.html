@@ -786,6 +786,20 @@ function openArts(keys, rail){
   markOn(rail, rail.querySelector("[data-arts]"));
   p.querySelectorAll("[data-close]").forEach(el => { el.onclick = () => hideRailPanel(rail); });
 }
+/* 前提の本文から、いま出題中の穴の正解を伏せる（2026-08-08 追加）。
+   前提を出したことで、同じ語が前のブロックにも出ていると答えが見えてしまう。
+   実測で67件あった（例＝処分権主義 第8 の穴「一部認容」が第6の本文に素で出ている）。
+   build_cards.py は同じブロック内でしか伏せていないので、ブロックをまたぐぶんはここで消す。
+   伏せるのは正解の文字列だけなので、前の話の流れ（＝前提として見せたいもの）は読める。 */
+function hideAnswers(body, c){
+  if(!c.answers || !c.answers.length) return body;
+  let s = body;
+  c.answers.forEach((a, i) => {
+    if(!a || Array.from(a).length < 2) return;   // 1字は偶然一致するので触らない
+    s = s.split(a).join('⟦' + (MARKS[i] || '№') + '⟧');
+  });
+  return s;
+}
 function openRefs(c, rail){
   const b = c.book;
   const p = document.getElementById("railpanel");
@@ -800,7 +814,7 @@ function openRefs(c, rail){
     h += '<div class="art" style="margin-top:.8rem"><b>' + esc(x.block) + '</b>'
        + '<span class="dim" style="margin-left:.4rem">'
        + (ref ? '参照（暗唱の対象外）' : '前のブロック（これ自体も暗唱の対象）') + '</span>'
-       + '<div class="body">' + deco(emph(x.body), null) + '</div>'
+       + '<div class="body">' + deco(holes(hideAnswers(x.body, c), null), null) + '</div>'
        + (ref ? '<button class="link" data-back="' + esc(x.id) + '">これは暗唱したい</button>' : '')
        + '</div>';
   });
