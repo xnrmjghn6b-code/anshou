@@ -84,6 +84,21 @@
     font-weight:600}
   button.link{background:none;border:none;color:var(--dim);text-decoration:underline;
     padding:.2rem .3rem;font-size:.82rem}
+  /* 記号だけのボタン（明暗の切り替え）。下線を消し、字より一回り大きく置く */
+  button.glyph{text-decoration:none;font-size:1rem;line-height:1;padding:.2rem .25rem;
+    width:1.6em;text-align:center}
+  button.glyph:hover{color:var(--accent)}
+  /* 同期の合図。絵文字ではなく単色の記号にする（2026-08-08 こもごもさん指示・第2弾）。
+     幅を1文字ぶんに固定してあるので、記号が変わってもヘッダーは動かない。
+     ○＝待機／◐＝通信中（回る）／✓＝保存済み／✕＝失敗。形だけでも区別できる */
+  .sync{display:inline-block;width:1.1em;text-align:center;font-size:.88rem;line-height:1;
+    font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif}
+  .sync.idle{color:var(--dim);opacity:.45}
+  .sync.busy{color:var(--accent);animation:syncspin 1.2s linear infinite}
+  .sync.ok{color:var(--ok)}
+  .sync.err{color:var(--ng)}
+  @keyframes syncspin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){ .sync.busy{animation:none} }
   /* 「もどる」「とばす」は同じ大きさで、「答えを見る」より一回り小さく */
   button.sub{font-size:.85rem;padding:.4rem .2rem;min-width:5rem;color:var(--dim)}
   button.sub[disabled]{opacity:.35;cursor:default;border-color:var(--line)}
@@ -287,8 +302,8 @@ try{
     <h1>論証暗唱</h1>
     <span class="grow"></span>
     <span class="dim" id="hdr"></span>
-    <span class="dim" id="cloudHdr"></span>
-    <button class="link" id="btnTheme" title="明るさを切り替える">🌙</button>
+    <span class="sync idle" id="cloudHdr"></span>
+    <button class="link glyph" id="btnTheme" title="明るさを切り替える">☾</button>
     <button class="link" id="btnSave">保存</button>
     <button class="link" id="btnToc">目次</button>
     <button class="link" id="btnHome">ホーム</button>
@@ -409,21 +424,28 @@ function hhmm(){
   const d = new Date();
   return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
 }
-/* ヘッダーの同期表示は絵文字1文字だけにする（2026-08-08 こもごもさん指示）。
+/* ヘッダーの同期表示は記号1文字だけにする（2026-08-08 こもごもさん指示）。
    「保存中」→「保存した 14:23」と文字数が変わるたびにヘッダーの他のボタンが
    左右に動いてレイアウトがズレるため。詳しい文言は設定画面（cloudMsg）と
-   長押し／ホバーの title に残す。 */
+   長押し／ホバーの title に残す。
+
+   ⚠️ 絵文字（☁⏳✅）は使わない（2026-08-08 こもごもさん指示・第2弾）。
+   端末ごとに勝手な色と絵で描かれ、六法の紙面から採った配色の中で浮くため。
+   代わりに単色の幾何記号を使い、色はCSS変数（藍・緑・朱）で付ける。
+   状態は「地の色」ではなく形で分かるようにしてある（色だけに頼らない）。 */
 function cloudMark(s){
-  if(!s) return "☁";
-  if(/できない|読めない|通らない|つながらない|鍵が空|鍵が無い/.test(s)) return "⚠️";
-  if(/保存中|読み込み中|試している|確かめている/.test(s))               return "⏳";
-  if(/保存した|取り込んだ|同期済み|通った/.test(s))                     return "✅";
-  return "☁";
+  if(!s)                                                                return ["○","idle"];
+  if(/できない|読めない|通らない|つながらない|鍵が空|鍵が無い/.test(s)) return ["✕","err"];
+  if(/保存中|読み込み中|試している|確かめている/.test(s))               return ["◐","busy"];
+  if(/保存した|取り込んだ|同期済み|通った/.test(s))                     return ["✓","ok"];
+  return ["○","idle"];
 }
 function paintCloud(){
   const h = document.getElementById("cloudHdr");
   if(h){
-    h.textContent = cloudOn() ? cloudMark(cloudState) : "";
+    const [ch, cls] = cloudMark(cloudState);
+    h.textContent = cloudOn() ? ch : "";
+    h.className   = "sync " + (cloudOn() ? cls : "idle");
     h.title = cloudState || "";
   }
   const m = document.getElementById("cloudMsg");
@@ -1567,7 +1589,9 @@ function paintTheme(){
   const dark = document.documentElement.dataset.theme === "dark";
   const b = document.getElementById("btnTheme");
   if(b){
-    b.textContent = dark ? "☀" : "🌙";
+    // ☀ は端末によって絵文字（色付き）で描かれるので、字として描かせる指示（U+FE0E）を足す。
+    // ☾ には絵文字の形が無いのでそのままで単色になる
+    b.textContent = dark ? "☀︎" : "☾";
     b.title = dark ? "紙の色に戻す" : "暗くする";
   }
   // iPhoneでホーム画面から開いたときの上下の帯の色も合わせる（合わせないと白いままで浮く）
