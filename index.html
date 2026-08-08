@@ -12,7 +12,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#f4f5f7">
 <meta name="apple-mobile-web-app-title" content="論証暗唱">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="apple-touch-icon.png">
@@ -24,15 +24,29 @@
      本文は明朝（法律文書の書体）、ラベルと数字はゴシックで役割を分ける。 */
   :root{
     --bg:#f4f5f7; --fg:#15171c; --dim:#61656e; --line:#dcdfe5; --card:#fdfdfe;
-    --accent:#2f4b7c; --accent-soft:#e6ebf4;
+    --accent:#2f4b7c; --accent-soft:#e6ebf4; --onaccent:#fff;
     --hole:#eef2f8; --holeline:#2f4b7c; --ok:#2c6146; --ng:#a2352a; --em:#a8352a; --ans:#c62828;
+    --mid:#8a6410; --okbg:#eef5f1; --midbg:#fbf4e4; --ngbg:#fbeeec; --dot:#b8621a;
+    color-scheme:light;
   }
-  /* 端末やビューアがダークでも紙の色のまま出す（2026-07-30 こもごもさん指示） */
-  :root{ color-scheme:light }
-  :root[data-theme=light],:root[data-theme=dark]{
+  /* ⚠️ 端末やビューアの設定（prefers-color-scheme）では切り替えない
+     （2026-07-30 こもごもさん指示：端末がダークでも紙の色のまま出す）。
+     暗くするのは、ヘッダーの 🌙 を自分で押したときだけ（2026-08-08 追加）。 */
+  :root[data-theme=light]{
     --bg:#f4f5f7; --fg:#15171c; --dim:#61656e; --line:#dcdfe5; --card:#fdfdfe;
-    --accent:#2f4b7c; --accent-soft:#e6ebf4;
+    --accent:#2f4b7c; --accent-soft:#e6ebf4; --onaccent:#fff;
     --hole:#eef2f8; --holeline:#2f4b7c; --ok:#2c6146; --ng:#a2352a; --em:#a8352a; --ans:#c62828;
+    --mid:#8a6410; --okbg:#eef5f1; --midbg:#fbf4e4; --ngbg:#fbeeec; --dot:#b8621a;
+    color-scheme:light;
+  }
+  /* 夜の紙。地と札を真っ黒にせず、藍と朱は暗い地の上で読める明るさまで持ち上げる。
+     役割（地＝紙／差し色＝藍／答えと警告＝朱）は明るいほうと同じに保つ。 */
+  :root[data-theme=dark]{
+    --bg:#14161a; --fg:#e7e8ec; --dim:#9aa1ad; --line:#2c313a; --card:#1b1f25;
+    --accent:#93b4e6; --accent-soft:#222b3a; --onaccent:#11151b;
+    --hole:#232a36; --holeline:#93b4e6; --ok:#72c39a; --ng:#e8887a; --em:#eb9a8e; --ans:#ff9c92;
+    --mid:#d8ad52; --okbg:#1c2a24; --midbg:#2a2518; --ngbg:#2d1f1d; --dot:#dd9155;
+    color-scheme:dark;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);
@@ -66,7 +80,8 @@
   button{font-family:inherit;font-size:1rem;color:var(--fg);background:var(--card);
     border:1px solid var(--line);border-radius:.5rem;padding:.55rem .9rem;cursor:pointer}
   button:hover{border-color:var(--accent)}
-  button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+  button.primary{background:var(--accent);color:var(--onaccent);border-color:var(--accent);
+    font-weight:600}
   button.link{background:none;border:none;color:var(--dim);text-decoration:underline;
     padding:.2rem .3rem;font-size:.82rem}
   /* 「もどる」「とばす」は同じ大きさで、「答えを見る」より一回り小さく */
@@ -197,7 +212,7 @@
   .rail .tag{color:var(--dim);font-size:.7rem;letter-spacing:.08em;flex:none;padding-right:.2rem}
   .rail button{flex:none;font-size:.82rem;padding:.4rem .8rem;border-radius:1em;
     background:var(--accent-soft);border-color:transparent;color:var(--accent);font-weight:600}
-  .rail button.on{background:var(--accent);color:#fff}
+  .rail button.on{background:var(--accent);color:var(--onaccent)}
   .railpanel{position:fixed;left:0;right:0;bottom:var(--railh,2.7rem);max-height:60vh;
     overflow-y:auto;-webkit-overflow-scrolling:touch;
     background:var(--card);border-top:1px solid var(--line);
@@ -248,15 +263,24 @@
   .chips{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.35rem}
   .chip{min-width:2.1rem;font-size:.8rem;padding:.2rem .35rem;border-radius:.4rem;
     border:1px solid var(--line);background:var(--card);color:var(--dim);cursor:pointer}
-  .chip.ok{border-color:var(--ok);color:var(--ok);background:#eef5f1}
-  .chip.mid{border-color:#8a6410;color:#8a6410;background:#fbf4e4}
-  .chip.ng{border-color:var(--ng);color:var(--ng);background:#fbeeec}
+  .chip.ok{border-color:var(--ok);color:var(--ok);background:var(--okbg)}
+  .chip.mid{border-color:var(--mid);color:var(--mid);background:var(--midbg)}
+  .chip.ng{border-color:var(--ng);color:var(--ng);background:var(--ngbg)}
   .chip.ref{text-decoration:line-through;opacity:.55;cursor:default}
-  .chip .dot{color:#b8621a;font-size:.62em;vertical-align:.35em;margin-left:.1em}
+  .chip .dot{color:var(--dot);font-size:.62em;vertical-align:.35em;margin-left:.1em}
   .big{font-size:1.6rem;font-weight:700}
   .setsurei{background:var(--hole);border-left:3px solid var(--accent);
     border-radius:0 .4rem .4rem 0;padding:.8rem .9rem;margin:.5rem 0}
 </style>
+
+<!-- 明暗の選択は本体より先に当てる。あとで当てると、暗くしている人の画面が
+     読み込みのたびに一瞬白く光るため（2026-08-08） -->
+<script>
+try{
+  var t = localStorage.getItem("gomo_anshou_theme");
+  if(t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+}catch(e){}
+</script>
 
 <div class="wrap">
   <header>
@@ -264,6 +288,7 @@
     <span class="grow"></span>
     <span class="dim" id="hdr"></span>
     <span class="dim" id="cloudHdr"></span>
+    <button class="link" id="btnTheme" title="明るさを切り替える">🌙</button>
     <button class="link" id="btnSave">保存</button>
     <button class="link" id="btnToc">目次</button>
     <button class="link" id="btnHome">ホーム</button>
@@ -1535,6 +1560,27 @@ if(!storeOk) document.getElementById("noStore").classList.remove("hide");
 sync();
 document.getElementById("btnHome").onclick = home;
 document.getElementById("btnToc").onclick = toc;
+/* 明るさの切り替え（2026-08-08 こもごもさん要望）。
+   端末の設定には従わず、押した選択だけを覚える。進捗（KEY）とは別の鍵に入れるので、
+   GitHub同期には乗らない＝端末ごとに好きな明るさにできる。 */
+function paintTheme(){
+  const dark = document.documentElement.dataset.theme === "dark";
+  const b = document.getElementById("btnTheme");
+  if(b){
+    b.textContent = dark ? "☀" : "🌙";
+    b.title = dark ? "紙の色に戻す" : "暗くする";
+  }
+  // iPhoneでホーム画面から開いたときの上下の帯の色も合わせる（合わせないと白いままで浮く）
+  const m = document.querySelector('meta[name="theme-color"]');
+  if(m) m.setAttribute("content", dark ? "#14161a" : "#f4f5f7");
+}
+document.getElementById("btnTheme").onclick = () => {
+  const dark = document.documentElement.dataset.theme === "dark";
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  try{ localStorage.setItem("gomo_anshou_theme", dark ? "light" : "dark"); }catch(e){}
+  paintTheme();
+};
+paintTheme();
 /* いつでも手で送れるようにしておく（30秒待たずに確定させたいとき・端末を持ち替えるとき） */
 document.getElementById("btnSave").onclick = async () => {
   if(!cloudOn()){
