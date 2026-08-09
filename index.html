@@ -290,6 +290,8 @@
   .big{font-size:1.6rem;font-weight:700}
   .setsurei{background:var(--hole);border-left:3px solid var(--accent);
     border-radius:0 .4rem .4rem 0;padding:.8rem .9rem;margin:.5rem 0}
+  /* 対立構造の中に畳んで添える設例は、通しモードの出題文より小さく出す（読む対象であって解く対象ではない） */
+  details.gaku .setsurei{font-size:.82rem;line-height:1.7;padding:.6rem .7rem}
 </style>
 
 <!-- 明暗の選択は本体より先に当てる。あとで当てると、暗くしている人の画面が
@@ -942,6 +944,23 @@ function qaBox(c){
    帯が出る条件（arasoi かつ 学説節あり）と、この枠が出る条件が完全に同じだったので、
    同じことを2回言っていた。見出しが合図を兼ねる形に一本化した。
    枠が出ていない＝判例通説で固まっている、という保証は変わらない。 */
+/* 対立構造の文章は「対立の実益＝設例2がまさにこの分岐点」の形で**設例を名指しする**
+   （2026-08-09 実測で67か所。学説対立を結論の並列で終わらせず「どの事案で結論が変わるか」まで
+   降りるための書き方で、論証の質にとって本質的）。ところがアプリはブロック単位で出すので、
+   設例が画面のどこにも無く、参照先が分からなかった（こもごもさんのメモ「設例2がどこにあるのか」）。
+   直すのは論証ではなくアプリ側——**対立構造を開いた人だけが設例を必要としている**ので、
+   その中に畳んで添える。通しモードは設例そのものが出題文なので添えない（二重になる）。 */
+function setsureiBox(b){
+  const ss = (b && b.setsurei) || [];
+  if(!ss.length) return "";
+  let h = '<details class="hanrei"><summary>この論証の設例（' + ss.length
+        + '）／上の「対立の実益」が指しているもの</summary>';
+  ss.forEach((s, i) => {
+    h += '<div style="margin-top:.5rem"><b>設例' + (i + 1) + '</b>'
+       + '<div class="setsurei">' + esc(s) + '</div></div>';
+  });
+  return h + '</details>';
+}
 function gakuBox(c){
   const b = c && c.book ? c.book : c;              // カードでも本でも受ける（通しモード用）
   if(!b || !b.gakusetsu) return "";
@@ -952,7 +971,7 @@ function gakuBox(c){
     ? '⚖ 争いアリ<span>反対説と、それを採らない理由を確認する（出典つき）</span>'
     : '対立構造と自説の優位性（出典つき）';
   return '<details class="gaku' + (block ? ' arasoi' : '') + '"><summary>' + sum
-       + '</summary>' + b.gakusetsu + '</details>';
+       + '</summary>' + b.gakusetsu + (block ? setsureiBox(b) : '') + '</details>';
 }
 function rankLine(rank){
   if(rank === "A") return "ランクA（合格ライン＝4以上・条文の項号と理由付けまで）";
