@@ -816,11 +816,23 @@ function deco(s, notes){
 /* 注釈の一覧（小さく出す）。判示は答えを見るまで伏せる（規範が漏れるため） */
 function noteList(notes, withGist){
   if(!notes || !notes.length) return "";
-  let h = '<div class="notes">';
+  /* 同じ判例を2か所で引いたら `1.2　最判平6・2・22` と1行にまとめる（2026-08-09 こもごもさん指示）。
+     同じ行が2回並ぶと、別の判例が2件あるように見える。
+     束ねる鍵は、判例表で日付照合できた名前（case）。表に無い注釈はラベルの完全一致だけで束ね、
+     表記が揺れているものは別物のまま出す（推測で同一視しない）。
+     本文中の ⟨1⟩ ⟨2⟩ の番号は動かさない——どこが何番かの対応が崩れるため。 */
+  const groups = [];
   notes.forEach(n => {
-    h += '<p><span class="n">' + n.n + '</span><span class="case">'
-       + md(n.case || n.label) + '</span>';
-    if(withGist && n.gist) h += '　' + md(n.gist);
+    const key = n.case || n.label;
+    const g = groups.find(x => x.key === key);
+    if(g){ g.ns.push(n.n); if(!g.gist) g.gist = n.gist; }
+    else groups.push({key:key, ns:[n.n], gist:n.gist, label:n.case || n.label});
+  });
+  let h = '<div class="notes">';
+  groups.forEach(g => {
+    h += '<p><span class="n">' + g.ns.join('.') + '</span><span class="case">'
+       + md(g.label) + '</span>';
+    if(withGist && g.gist) h += '　' + md(g.gist);
     h += '</p>';
   });
   if(!withGist) h += '<p>点線が引用にあたる部分。判示は答えを見ると出る。</p>';
@@ -1054,19 +1066,17 @@ function openArts(keys, rail){
   markOn(rail, rail.querySelector("[data-arts]"));
   p.querySelectorAll("[data-close]").forEach(el => { el.onclick = () => hideRailPanel(rail); });
 }
-/* 前提の本文から、いま出題中の穴の正解を伏せる（2026-08-08 追加）。
-   前提を出したことで、同じ語が前のブロックにも出ていると答えが見えてしまう。
-   実測で67件あった（例＝処分権主義 第8 の穴「一部認容」が第6の本文に素で出ている）。
-   build_cards.py は同じブロック内でしか伏せていないので、ブロックをまたぐぶんはここで消す。
-   伏せるのは正解の文字列だけなので、前の話の流れ（＝前提として見せたいもの）は読める。 */
+/* ⚠️ 前提の本文は、そのまま素で見せる（2026-08-09 こもごもさん指示で方針を反転）。
+
+   2026-08-08 に、前提の中に出題中の穴と同じ語があると答えが見えてしまうので伏せていた
+   （実測67件。例＝処分権主義 第8 の穴「一部認容」が第6の本文に素で出ている）。
+   しかし実際に解いてみると逆効果だった——**穴になっているほうが、かえって文脈から答えを
+   察してしまう**（「ここが伏せられている＝これが答えだ」と分かる）。伏せることで
+   前提としても読めなくなり、失うものだけが残る。
+   したがって伏せない。前提を読んで答えが分かるなら、それはもともと前提に入れすぎている
+   （そのときは `これは前提に不要` で外す）という切り分けにする。 */
 function hideAnswers(body, c){
-  if(!c.answers || !c.answers.length) return body;
-  let s = body;
-  c.answers.forEach((a, i) => {
-    if(!a || Array.from(a).length < 2) return;   // 1字は偶然一致するので触らない
-    s = s.split(a).join('⟦' + (MARKS[i] || '№') + '⟧');
-  });
-  return s;
+  return body;
 }
 function openRefs(c, rail){
   const b = c.book;
@@ -1075,8 +1085,9 @@ function openRefs(c, rail){
   const refs = premises(c);
   let h = '<div class="wrapin"><h3>' + esc(b.name) + '　前提の確認<span class="grow"></span>'
         + '<button class="close" data-close="1">閉じる</button></h3>'
-        + '<div class="dim">ここまでに積み上がっている前提。'
-        + 'いま出題されているブロックの答えは出していない。</div>';
+        + '<div class="dim">ここまでに積み上がっている前提。文章はそのまま出している'
+        + '（伏せると、かえって伏せた場所が答えの手がかりになるため）。'
+        + '読んで答えが分かってしまうものは <b>これは前提に不要</b> で外せる。</div>';
   refs.forEach(x => {
     const ref = isRef(Object.assign({book:b}, x));
     h += '<div class="art" style="margin-top:.8rem"><b>' + esc(x.block) + '</b>'
@@ -1193,7 +1204,11 @@ function study(queue, back){
   // ひとつ前に戻ったときに、そこで付けた判定を取り消せるように、採点前の状態を積んでおく
   const undo = [];
   function one(){
-    if(i >= queue.length){ done(queue.length, back); return; }
+    // 最後に解いた論証を渡す（終了画面の「次の論証へ」が体系順の次を出すため）
+    if(i >= queue.length){
+      done(queue.length, back, queue.length ? queue[queue.length - 1].book : null);
+      return;
+    }
     const c = queue[i];
     const st = S.cards[c.id];
     // 答えを隠すと入力欄ごと消えるので、書きかけを控えておいて出し直す
@@ -1447,15 +1462,39 @@ function refList(){
   });
 }
 
-function done(n, back){
+/* 目次の並び（科目 ＞ 分野 ＞ 論証＝体系順）を平らにする。「次の論証」を決めるのに使う */
+function flatBooks(){
+  const out = [];
+  tocGroups().forEach(g => g.books.forEach(b => out.push(b)));
+  return out;
+}
+/* 体系順で次に来る論証。暗唱カードが1枚も無いもの（参照だけ）は飛ばす。
+   末尾まで行ったら null（そこで「次の論証へ」は出さない） */
+function nextBookAfter(b){
+  if(!b) return null;
+  const all = flatBooks();
+  const i = all.indexOf(b);
+  if(i < 0) return null;
+  for(let k = i + 1; k < all.length; k++){
+    if(cardsOf(all[k]).some(c => !isRef(c))) return all[k];
+  }
+  return null;
+}
+function done(n, back, lastBook){
   setHdr("");
   hideRail();
+  // 目次から入ったときだけ「次の論証へ」を出す（2026-08-09 こもごもさん要望）。
+  // 目次を開き直して次を探す手間を無くす。並びは分野表どおりの体系順
+  const nx = back ? nextBookAfter(lastBook) : null;
   view().innerHTML = '<div class="card"><div class="big">' + n + ' 枚おわり</div>'
     + '<div class="dim">期日は自動で伸びた。期日が来ているものは残り ' + dueCards().length + ' 枚。</div>'
     + '<div class="row" style="margin-top:1rem">'
-    + (back ? '<button class="primary" id="bk">目次にもどる</button>' : '')
+    + (nx ? '<button class="primary" id="nx">次の論証へ（' + esc(nx.name) + '）</button>' : '')
+    + (back ? '<button class="' + (nx ? '' : 'primary ') + '" id="bk">目次にもどる</button>' : '')
     + '<button class="' + (back ? '' : 'primary ') + '" id="again">期日の分を続ける</button>'
     + '<button id="h">ホーム</button></div></div>';
+  const nb = document.getElementById("nx");
+  if(nb) nb.onclick = () => startToc([nx]);
   const bk = document.getElementById("bk");
   if(bk) bk.onclick = back;
   document.getElementById("again").onclick = () => {
