@@ -153,6 +153,8 @@
   details.hanrei .scroll{overflow-x:visible}
   /* 質問と回答の Q / A の目印。判例名と同じ色で、行頭の手がかりにする */
   details.hanrei .qq{color:var(--accent);font-weight:700;margin-right:.3em}
+  /* 質問と回答の一覧（ホームから）の科目見出し */
+  .qasub{margin:1rem 0 .3rem;font-weight:700;font-size:.86rem}
   /* 対立構造と自説の優位性（学説ルートと決め手）。判例と同じ折りたたみの作りにする。
      争いが固まりきっていない論点は、答えを見たあとに「反対説と、それを採らない理由と
      出典」まで読めないと納得できない（2026-08-08 こもごもさん指示） */
@@ -1162,6 +1164,7 @@ function home(){
      + '<button class="link" id="btnRef">参照の一覧（' + refCards().length + '）</button>'
      + '<button class="link" id="btnIO">書き出し／読み込み</button>'
      + '<button class="link" id="btnMemo">メモ（' + memoCount() + '）</button>'
+     + '<button class="link" id="btnQa">質問と回答（' + qaCount() + '）</button>'
      + '<button class="link" id="btnCap">1日の枚数（' + cap() + '）</button></div></div>';
   view().innerHTML = h;
 
@@ -1174,6 +1177,7 @@ function home(){
   document.getElementById("btnRef").onclick = refList;
   document.getElementById("btnIO").onclick = io;
   document.getElementById("btnMemo").onclick = memoList;
+  document.getElementById("btnQa").onclick = qaList;
   document.getElementById("btnCap").onclick = () => {
     const n = prompt("1日に出す枚数", cap());
     if(n && +n > 0){ S.cap = Math.min(200, +n); save(); home(); }
@@ -1380,6 +1384,39 @@ function memoList(){
       memoList();
     };
   });
+}
+
+/* 質問と回答の一覧（ホームから読む・2026-08-09 こもごもさん指示）。
+   ブロックを解いているときは該当ブロックの分しか出ないので、
+   「前に何を聞いたか」を通しで読み返す入口をホームにも置く。
+   論証ごとに畳んでおき、押した論証だけ開く（全部開くと縦に長すぎる）。 */
+function qaCount(){
+  return DATA.books.reduce((n, b) => n + ((b.qa || []).length), 0);
+}
+function qaList(){
+  setHdr("");
+  hideRail();
+  const books = DATA.books.filter(b => (b.qa || []).length);
+  const n = qaCount();
+  let h = '<div class="card"><div class="book">質問と回答（' + n + '）</div>'
+    + '<div class="dim">暗唱中のメモに書いた疑問と、カニが朝にDBで裏を取って返した答え。'
+    + '同じものが、その論証を解いて答えを見たときにも出る。</div>';
+  if(!books.length){
+    h += '<div class="dim" style="margin-top:.8rem">まだ質問と回答はありません。</div>';
+  }
+  // 科目ごとにまとめる（目次と同じ並べ方）
+  const subjects = [];
+  books.forEach(b => { if(!subjects.includes(b.subject)) subjects.push(b.subject); });
+  subjects.forEach(sub => {
+    h += '<div class="qasub">' + esc(sub) + '</div>';
+    books.filter(b => b.subject === sub).forEach(b => {
+      const rows = b.qa || [];
+      h += '<details class="hanrei"><summary>' + esc(b.name) + '（' + rows.length + '）</summary>'
+         + qaTable(rows) + '</details>';
+    });
+  });
+  h += '</div>';
+  view().innerHTML = h;
 }
 
 /* 参照の一覧（暗唱に出していないもの） */
