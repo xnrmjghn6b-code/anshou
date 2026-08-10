@@ -331,6 +331,7 @@ const DATA = {"books":[{"name":"上訴と不利益変更禁止の原則","subjec
 const KEY = "gomo_anshou_v1";
 const NEW_INTERVAL = 3;      // 新しいカードの初回間隔（日）
 const FIX_INTERVAL = 3;      // 論証が直されたカードを戻す間隔（日）
+const MAX_INTERVAL = 60;     // 間隔の上限（日）。試験前に一度も戻らないカードを作らないため
 
 /* ---------- 日付 ---------- */
 function today(){ return fmt(new Date()); }
@@ -751,6 +752,7 @@ function grade(id, g){
   else if(g === 3) next = prev;
   else if(g === 2) next = 3;
   else             next = 1;
+  next = Math.min(next, MAX_INTERVAL);
   st.interval = next;
   st.due = addDays(today(), next);
   st.grade = g;
