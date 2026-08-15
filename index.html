@@ -1004,12 +1004,14 @@ function qaBox(c){
   if(!mine.length && !rest.length) return "";
   // 既定は閉じる（判例と同じ理由＝答えの直後に広がると判定ボタンが遠くなる）
   let h = "";
+  // 見出しは短く。絵文字を2つ並べたり「質問と回答・規範の直し」と添え書きしたりすると
+  // 見出しが濁る（2026-08-15 こもごもさん指摘）。何の出来事かは行の頭の 💬／📝 で分かる。
   if(mine.length){
-    h += '<details class="hanrei"><summary>💬📝 このブロックの記録（'
-       + mine.length + '）質問と回答・規範の直し</summary>' + logRows(mine) + '</details>';
+    h += '<details class="hanrei"><summary>🕘 このブロックの記録（'
+       + mine.length + '）</summary>' + logRows(mine) + '</details>';
   }
   if(rest.length){
-    h += '<details class="hanrei"><summary>💬📝 '
+    h += '<details class="hanrei"><summary>🕘 '
        + (mine.length ? 'この論証の他の記録（' : 'この論証の記録（')
        + rest.length + '）</summary>' + logRows(rest) + '</details>';
   }
