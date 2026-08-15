@@ -970,7 +970,7 @@ function logRows(list){
       : (e.kind === 'tl' ? '論証ぜんたい' : md(e.kind === 'qa' ? e.row[1] : ''));
     const head = '<td class="nm">' + where
                + '<div class="dim" style="font-size:.7rem">'
-               + '<span class="qq">' + (e.kind === 'qa' ? '［問］' : '［直］') + '</span> '
+               + '<span class="qq">' + (e.kind === 'qa' ? '［問］' : '［修］') + '</span> '
                + day + '</div></td>';
     if(e.kind === 'qa'){
       t += '<tr>' + head + '<td>'
