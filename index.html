@@ -193,6 +193,8 @@
   /* 質問と回答の表に混ぜて出す（2026-08-15）。どちらも日付の付いた出来事なので、
      別々の折りたたみに分けず1本の時系列にした。 */
   .msg{color:var(--dim);font-size:.72rem;margin-top:.1rem}
+  /* いま解いているブロックの行だけ目に入るようにする（他のブロック・論証ぜんたいは静かに） */
+  b.mine{color:var(--accent)}
   .rireki .side{margin-top:.3rem;padding:.35rem .5rem;border-radius:.3rem;
     border:1px solid var(--line);white-space:pre-wrap;line-height:1.5;font-size:.78rem}
   .rireki .side.old{opacity:.72}
@@ -955,18 +957,28 @@ function byDateDesc(list){
   dated.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   return dated.concat(undated);
 }
+/* 左の欄は「どこの話か」を出す。いま解いているブロックの分は【このブロック】と名乗らせ、
+   他のブロック・論証まるごとの話とひと目で見分けられるようにする（2026-08-15）。
+   折りたたみを2つに分けていたが、同じような名前の箱が2つ並んで混乱するとの指摘で、
+   1本の時系列にまとめてこの欄で区別する形に変えた。 */
 function logRows(list){
   let t = '<div class="scroll"><table>';
   list.forEach(e => {
     const day = e.date ? esc(e.date) : '日付なし';
+    const where = e.mine
+      ? '<b class="mine">このブロック</b>'
+      : (e.kind === 'tl' ? '論証ぜんたい' : md(e.kind === 'qa' ? e.row[1] : ''));
+    const head = '<td class="nm">' + where
+               + '<div class="dim" style="font-size:.7rem">'
+               + '<span class="qq">' + (e.kind === 'qa' ? '［問］' : '［直］') + '</span> '
+               + day + '</div></td>';
     if(e.kind === 'qa'){
-      t += '<tr><td class="nm"><span class="qq">［問］</span> ' + day
-         + '<div class="dim" style="font-size:.7rem">' + md(e.row[1]) + '</div></td><td>'
+      t += '<tr>' + head + '<td>'
          + '<span class="qq">Q</span> ' + md(e.row[2])
          + '<br><span class="qq">A</span> ' + md(e.row[3]) + '</td></tr>';
     }else if(e.kind === 'edit'){
       const r = e.rec;
-      let body = '<div class="msg">' + esc(r.msg) + '</div>';
+      let body = '<div class="msg">規範を' + esc(r.kind) + '　' + esc(r.msg) + '</div>';
       if(r.kind === '新設'){
         body += '<div class="side new">' + esc(plainMd(r.after)) + '</div>';
       }else{
@@ -974,9 +986,7 @@ function logRows(list){
         body += '<div class="side old">' + d[0] + '</div>'
               + '<div class="side new">' + d[1] + '</div>';
       }
-      t += '<tr><td class="nm"><span class="qq">［直］</span> ' + day
-         + '<div class="dim" style="font-size:.7rem">規範を' + esc(r.kind) + '</div>'
-         + '</td><td class="rireki">' + body + '</td></tr>';
+      t += '<tr>' + head + '<td class="rireki">' + body + '</td></tr>';
     }else{
       // 論証を作り直した回は全ブロックが並んで読めなくなるので、4つ以上は数だけにする
       const names = a => a.length > 3 ? a.length + 'ブロック' : a.join('／');
@@ -984,9 +994,8 @@ function logRows(list){
       if(e.tl.added.length)   bits.push('新設＝' + names(e.tl.added));
       if(e.tl.changed.length) bits.push('本文を直した＝' + names(e.tl.changed));
       if(e.tl.removed.length) bits.push('外した＝' + names(e.tl.removed));
-      t += '<tr><td class="nm"><span class="qq">［直］</span> ' + day
-         + '<div class="dim" style="font-size:.7rem">論証の組み替え</div></td><td>'
-         + esc(bits.join('、')) + '<div class="msg">' + esc(e.tl.msg) + '</div></td></tr>';
+      t += '<tr>' + head + '<td>' + esc(bits.join('、'))
+         + '<div class="msg">' + esc(e.tl.msg) + '</div></td></tr>';
     }
   });
   return t + '</table></div>';
@@ -997,26 +1006,20 @@ function qaBox(c){
   const block = !!(c && c.book);
   // カードのidは「科目/論証#5」。末尾の番号でこのブロック宛ての質問を拾う
   const n = block ? parseInt(String(c.id || '').split('#')[1], 10) : 0;
-  const mine = byDateDesc(qaEntries(n ? rows.filter(r => r[0] === n) : [])
-                          .concat(editEntries(block ? c.rireki : [])));
-  const rest = byDateDesc(qaEntries(n ? rows.filter(r => r[0] !== n) : rows)
-                          .concat(tlEntries(b && b.timeline)));
-  if(!mine.length && !rest.length) return "";
+  // いま解いているブロックの分に印を付けたうえで、全部を1本の時系列にする。
+  // 折りたたみを「このブロックの記録」と「この論証の他の記録」に分けていたが、
+  // 似た名前の箱が2つ並んで混乱するとの指摘（2026-08-15）。どこの話かは左の欄で分かる。
+  const mark = (list, mine) => list.map(e => Object.assign(e, {mine: mine}));
+  const all = byDateDesc(
+    mark(qaEntries(n ? rows.filter(r => r[0] === n) : []), true)
+      .concat(mark(editEntries(block ? c.rireki : []), true))
+      .concat(mark(qaEntries(n ? rows.filter(r => r[0] !== n) : rows), false))
+      .concat(mark(tlEntries(b && b.timeline), false)));
+  if(!all.length) return "";
   // 既定は閉じる（判例と同じ理由＝答えの直後に広がると判定ボタンが遠くなる）
-  let h = "";
-  // 見出しは短く。絵文字を2つ並べたり「質問と回答・規範の直し」と添え書きしたりすると
-  // 見出しが濁る（2026-08-15 こもごもさん指摘）。何の出来事かは行の頭の ［問］／［直］ で分かる。
-  // 絵文字は使わない（2026-08-15 こもごもさん指示。角括弧の記号に統一）。
-  if(mine.length){
-    h += '<details class="hanrei"><summary>このブロックの記録（'
-       + mine.length + '）</summary>' + logRows(mine) + '</details>';
-  }
-  if(rest.length){
-    h += '<details class="hanrei"><summary>'
-       + (mine.length ? 'この論証の他の記録（' : 'この論証の記録（')
-       + rest.length + '）</summary>' + logRows(rest) + '</details>';
-  }
-  return h;
+  // 見出しは短く。絵文字は使わない（2026-08-15 こもごもさん指示。角括弧の記号に統一）。
+  return '<details class="hanrei"><summary>この論証の記録（'
+       + all.length + '）</summary>' + logRows(all) + '</details>';
 }
 /* 対立構造と自説の優位性。論証mdの「学説ルートと決め手」をそのまま出す。
    争いが固まりきっていない論点は、答えが合っていても「なぜ反対説を採らないか」が
