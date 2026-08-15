@@ -190,18 +190,15 @@
      何が動いたのか見えない、というこもごもさんの指摘で入れた。gitに全部残っているのに
      スマホから見えないだけだったので、覚える論証の差分をここに出す。
      資料側（判例表・出典）の書き換えは出さない——毎日「変わりました」が出て本物が埋もれる。 */
-  details.rireki>summary{font-size:.8rem;color:var(--dim)}
-  details.rireki .rev{margin-top:.6rem;font-size:.78rem}
-  details.rireki .revhd{color:var(--dim)}
-  details.rireki .msg{color:var(--dim);font-size:.72rem;margin-top:.1rem}
-  details.rireki .side{margin-top:.3rem;padding:.35rem .5rem;border-radius:.3rem;
-    border:1px solid var(--line);white-space:pre-wrap;line-height:1.5}
-  details.rireki .side.old{opacity:.72}
-  details.rireki .side b{font-weight:700}
-  details.rireki .side.old b{color:#c0392b;text-decoration:line-through}
-  details.rireki .side.new b{color:var(--accent)}
-  details.rireki .tl{font-size:.76rem;margin-top:.5rem}
-  details.rireki .tl li{margin:.2rem 0}
+  /* 質問と回答の表に混ぜて出す（2026-08-15）。どちらも日付の付いた出来事なので、
+     別々の折りたたみに分けず1本の時系列にした。 */
+  .msg{color:var(--dim);font-size:.72rem;margin-top:.1rem}
+  .rireki .side{margin-top:.3rem;padding:.35rem .5rem;border-radius:.3rem;
+    border:1px solid var(--line);white-space:pre-wrap;line-height:1.5;font-size:.78rem}
+  .rireki .side.old{opacity:.72}
+  .rireki .side b{font-weight:700}
+  .rireki .side.old b{color:#c0392b;text-decoration:line-through}
+  .rireki .side.new b{color:var(--accent)}
   .grades{display:flex;gap:.4rem;margin-top:1rem}
   .grades button{flex:1;font-size:1.15rem;font-weight:700;padding:.7rem .2rem}
   .glabel{display:block;font-size:.62rem;font-weight:400;color:var(--dim);margin-top:.2rem}
@@ -918,35 +915,103 @@ function hanreiBox(b, notes){
    チャットの返事は流れて消えるが、同じブロックはまた回ってくるので、
    次に解いたときにその場で読み返せる位置に置く。
    判例と同じ折りたたみ・同じ縦積みの作りにして、置き場所も判例のすぐ下に揃える。 */
-function qaTable(rows){
+/* ---------- 規範の直しの差分（2026-08-15） ---------- */
+/* 論証mdの記法（穴の ==…==・太字の **…**・判例注の ((…))）は差分を読む邪魔なので落とす。
+   ここは「何が変わったか」を見る所で、覚える本文はカードの側に出ている。 */
+function plainMd(s){
+  return String(s).replace(/==/g, '').replace(/\*\*/g, '')
+                  .replace(/\(\((.+?)\)\)/g, '〈$1〉');
+}
+/* 長い規範のうち1文だけ直したとき、前後を丸ごと並べても違いが見つからない。
+   前後で共通する頭と尻を削って、動いた部分だけを太字にする（文字単位の突き合わせ）。 */
+const DIFF_CTX = 40;      // 変わった所の前後に残す文字数（これを超えたら … で省く）
+function markDiff(a0, b0){
+  const a = plainMd(a0), b = plainMd(b0);
+  let s = 0;
+  while(s < a.length && s < b.length && a[s] === b[s]) s++;
+  let e = 0;
+  while(e < a.length - s && e < b.length - s
+        && a[a.length - 1 - e] === b[b.length - 1 - e]) e++;
+  const wrap = t => {
+    let head = t.slice(0, s), mid = t.slice(s, t.length - e), tail = t.slice(t.length - e);
+    if(head.length > DIFF_CTX) head = '…' + head.slice(-DIFF_CTX);
+    if(tail.length > DIFF_CTX) tail = tail.slice(0, DIFF_CTX) + '…';
+    return esc(head) + (mid ? '<b>' + esc(mid) + '</b>' : '') + esc(tail);
+  };
+  return [wrap(a), wrap(b)];
+}
+function qaEntries(rows){
+  return rows.map(r => ({date: r[4] || '', kind: 'qa', row: r}));
+}
+function editEntries(recs){
+  return (recs || []).map(r => ({date: r.date || '', kind: 'edit', rec: r}));
+}
+function tlEntries(tl){
+  return (tl || []).map(t => ({date: t.date || '', kind: 'tl', tl: t}));
+}
+function byDateDesc(list){
+  // 日付のあるものを新しい順に。無いものはその後ろへ（順序は元のまま）
+  const dated = list.filter(e => e.date), undated = list.filter(e => !e.date);
+  dated.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  return dated.concat(undated);
+}
+function logRows(list){
   let t = '<div class="scroll"><table>';
-  rows.forEach(r => {
-    t += '<tr><td class="nm">' + md(r[1]) + '</td><td>'
-       + '<span class="qq">Q</span> ' + md(r[2])
-       + '<br><span class="qq">A</span> ' + md(r[3])
-       + '</td></tr>';
+  list.forEach(e => {
+    const day = e.date ? esc(e.date) : '日付なし';
+    if(e.kind === 'qa'){
+      t += '<tr><td class="nm"><span class="qq">💬</span> ' + day
+         + '<div class="dim" style="font-size:.7rem">' + md(e.row[1]) + '</div></td><td>'
+         + '<span class="qq">Q</span> ' + md(e.row[2])
+         + '<br><span class="qq">A</span> ' + md(e.row[3]) + '</td></tr>';
+    }else if(e.kind === 'edit'){
+      const r = e.rec;
+      let body = '<div class="msg">' + esc(r.msg) + '</div>';
+      if(r.kind === '新設'){
+        body += '<div class="side new">' + esc(plainMd(r.after)) + '</div>';
+      }else{
+        const d = markDiff(r.before, r.after);
+        body += '<div class="side old">' + d[0] + '</div>'
+              + '<div class="side new">' + d[1] + '</div>';
+      }
+      t += '<tr><td class="nm"><span class="qq">📝</span> ' + day
+         + '<div class="dim" style="font-size:.7rem">規範を' + esc(r.kind) + '</div>'
+         + '</td><td class="rireki">' + body + '</td></tr>';
+    }else{
+      // 論証を作り直した回は全ブロックが並んで読めなくなるので、4つ以上は数だけにする
+      const names = a => a.length > 3 ? a.length + 'ブロック' : a.join('／');
+      const bits = [];
+      if(e.tl.added.length)   bits.push('新設＝' + names(e.tl.added));
+      if(e.tl.changed.length) bits.push('本文を直した＝' + names(e.tl.changed));
+      if(e.tl.removed.length) bits.push('外した＝' + names(e.tl.removed));
+      t += '<tr><td class="nm"><span class="qq">📝</span> ' + day
+         + '<div class="dim" style="font-size:.7rem">論証の組み替え</div></td><td>'
+         + esc(bits.join('、')) + '<div class="msg">' + esc(e.tl.msg) + '</div></td></tr>';
+    }
   });
   return t + '</table></div>';
 }
 function qaBox(c){
   const b = (c && c.book) ? c.book : c;
   const rows = (b && b.qa) || [];
-  if(!rows.length) return "";
   const block = !!(c && c.book);
   // カードのidは「科目/論証#5」。末尾の番号でこのブロック宛ての質問を拾う
   const n = block ? parseInt(String(c.id || '').split('#')[1], 10) : 0;
-  const mine = n ? rows.filter(r => r[0] === n) : [];
-  const rest = n ? rows.filter(r => r[0] !== n) : rows;
+  const mine = byDateDesc(qaEntries(n ? rows.filter(r => r[0] === n) : [])
+                          .concat(editEntries(block ? c.rireki : [])));
+  const rest = byDateDesc(qaEntries(n ? rows.filter(r => r[0] !== n) : rows)
+                          .concat(tlEntries(b && b.timeline)));
+  if(!mine.length && !rest.length) return "";
   // 既定は閉じる（判例と同じ理由＝答えの直後に広がると判定ボタンが遠くなる）
   let h = "";
   if(mine.length){
-    h += '<details class="hanrei"><summary>💬 このブロックへの質問と回答（'
-       + mine.length + '）</summary>' + qaTable(mine) + '</details>';
+    h += '<details class="hanrei"><summary>💬📝 このブロックの記録（'
+       + mine.length + '）質問と回答・規範の直し</summary>' + logRows(mine) + '</details>';
   }
   if(rest.length){
-    h += '<details class="hanrei"><summary>💬 '
-       + (mine.length ? 'この論証の他の質問と回答（' : 'この論証への質問と回答（')
-       + rest.length + '）</summary>' + qaTable(rest) + '</details>';
+    h += '<details class="hanrei"><summary>💬📝 '
+       + (mine.length ? 'この論証の他の記録（' : 'この論証の記録（')
+       + rest.length + '）</summary>' + logRows(rest) + '</details>';
   }
   return h;
 }
@@ -993,64 +1058,6 @@ function gakuBox(c){
     : '対立構造と自説の優位性（出典つき）';
   return '<details class="gaku' + (block ? ' arasoi' : '') + '"><summary>' + sum
        + '</summary>' + b.gakusetsu + (block ? setsureiBox(b) : '') + '</details>';
-}
-/* ---------- 編集履歴（2026-08-15） ---------- */
-/* 長い規範のうち1文だけ直したとき、前後を丸ごと並べても違いが見つからない。
-   前後で共通する頭と尻を削って、動いた部分だけを太字にする（文字単位の突き合わせ）。 */
-/* 論証mdの記法（穴の ==…==・太字の **…**・判例注の ((…))）は差分を読む邪魔なので落とす。
-   ここは「何が変わったか」を見る画面であって、覚える本文はカードの側に出ている。 */
-function plainMd(s){
-  return String(s).replace(/==/g, '').replace(/\*\*/g, '')
-                  .replace(/\(\((.+?)\)\)/g, '〈$1〉');
-}
-const DIFF_CTX = 40;      // 変わった所の前後に残す文字数（これを超えたら … で省く）
-function markDiff(a0, b0){
-  const a = plainMd(a0), b = plainMd(b0);
-  let s = 0;
-  while(s < a.length && s < b.length && a[s] === b[s]) s++;
-  let e = 0;
-  while(e < a.length - s && e < b.length - s
-        && a[a.length - 1 - e] === b[b.length - 1 - e]) e++;
-  const wrap = t => {
-    let head = t.slice(0, s), mid = t.slice(s, t.length - e), tail = t.slice(t.length - e);
-    if(head.length > DIFF_CTX) head = '…' + head.slice(-DIFF_CTX);
-    if(tail.length > DIFF_CTX) tail = tail.slice(0, DIFF_CTX) + '…';
-    return esc(head) + (mid ? '<b>' + esc(mid) + '</b>' : '') + esc(tail);
-  };
-  return [wrap(a), wrap(b)];
-}
-function rirekiBox(c){
-  const b = c && c.book ? c.book : c;
-  const recs = (c && c.book) ? (c.rireki || []) : [];
-  const tl = (b && b.timeline) || [];
-  if(!recs.length && !tl.length) return "";
-  const n = recs.length || tl.length;
-  let h = '<details class="rireki"><summary>📝 直した記録（' + n + '）'
-        + (recs.length ? 'このブロックが変わったところ' : 'この論証の直し') + '</summary>';
-  recs.forEach(r => {
-    h += '<div class="rev"><span class="revhd">' + esc(r.date) + '　' + esc(r.kind)
-       + '</span><div class="msg">' + esc(r.msg) + '</div>';
-    if(r.kind === '新設'){
-      h += '<div class="side new">' + esc(plainMd(r.after)) + '</div>';
-    }else{
-      const d = markDiff(r.before, r.after);
-      h += '<div class="side old">' + d[0] + '</div>'
-         + '<div class="side new">' + d[1] + '</div>';
-    }
-    h += '</div>';
-  });
-  if(tl.length){
-    h += '<div class="tl"><b>この論証まるごとの動き</b><ul>';
-    tl.forEach(t => {
-      const bits = [];
-      if(t.added.length)   bits.push('新設＝' + t.added.join('／'));
-      if(t.changed.length) bits.push('本文を直した＝' + t.changed.join('／'));
-      if(t.removed.length) bits.push('外した＝' + t.removed.join('／'));
-      h += '<li>' + esc(t.date) + '　' + esc(bits.join('、')) + '</li>';
-    });
-    h += '</ul></div>';
-  }
-  return h + '</details>';
 }
 function rankLine(rank){
   if(rank === "A") return "ランクA（合格ライン＝4以上・条文の項号と理由付けまで）";
@@ -1386,7 +1393,7 @@ function study(queue, back){
       // 争いアリのときに開く「対立構造」を判例表より上に置く（2026-08-08 こもごもさん指示）
       a += gakuBox(c);
       a += hanreiBox(c.book, c.notes);
-      a += rirekiBox(c);
+      // 直した記録は qaBox の時系列に合流させた（2026-08-15 こもごもさん提案）
       a += qaBox(c);
       a += '<div class="grades">'
          + gbtn(5) + gbtn(4) + gbtn(3) + gbtn(2) + gbtn(1)
@@ -1436,7 +1443,7 @@ function fullMode(b){
   document.getElementById("rv").onclick = () => {
     // 通しでは注釈の番号は出さない（本1冊ぶんで番号が重なるため）。引用の点線だけ残る
     let a = '<div class="ans"><div class="body">' + deco(emph(b.full), null) + '</div>'
-          + gakuBox(b) + hanreiBox(b) + rirekiBox(b)  // 対立構造を判例表より上に（2026-08-08）
+          + gakuBox(b) + hanreiBox(b)    // 対立構造を判例表より上に（2026-08-08）
           + qaBox(b);                    // 通しでは論証1本ぶんの質問をまとめて出す
     a += '<div class="grades">'
        + '<button data-g="5">5</button><button data-g="4">4</button>'
