@@ -960,7 +960,7 @@ function logRows(list){
   list.forEach(e => {
     const day = e.date ? esc(e.date) : '日付なし';
     if(e.kind === 'qa'){
-      t += '<tr><td class="nm"><span class="qq">💬</span> ' + day
+      t += '<tr><td class="nm"><span class="qq">［問］</span> ' + day
          + '<div class="dim" style="font-size:.7rem">' + md(e.row[1]) + '</div></td><td>'
          + '<span class="qq">Q</span> ' + md(e.row[2])
          + '<br><span class="qq">A</span> ' + md(e.row[3]) + '</td></tr>';
@@ -974,7 +974,7 @@ function logRows(list){
         body += '<div class="side old">' + d[0] + '</div>'
               + '<div class="side new">' + d[1] + '</div>';
       }
-      t += '<tr><td class="nm"><span class="qq">📝</span> ' + day
+      t += '<tr><td class="nm"><span class="qq">［直］</span> ' + day
          + '<div class="dim" style="font-size:.7rem">規範を' + esc(r.kind) + '</div>'
          + '</td><td class="rireki">' + body + '</td></tr>';
     }else{
@@ -984,7 +984,7 @@ function logRows(list){
       if(e.tl.added.length)   bits.push('新設＝' + names(e.tl.added));
       if(e.tl.changed.length) bits.push('本文を直した＝' + names(e.tl.changed));
       if(e.tl.removed.length) bits.push('外した＝' + names(e.tl.removed));
-      t += '<tr><td class="nm"><span class="qq">📝</span> ' + day
+      t += '<tr><td class="nm"><span class="qq">［直］</span> ' + day
          + '<div class="dim" style="font-size:.7rem">論証の組み替え</div></td><td>'
          + esc(bits.join('、')) + '<div class="msg">' + esc(e.tl.msg) + '</div></td></tr>';
     }
@@ -1005,13 +1005,14 @@ function qaBox(c){
   // 既定は閉じる（判例と同じ理由＝答えの直後に広がると判定ボタンが遠くなる）
   let h = "";
   // 見出しは短く。絵文字を2つ並べたり「質問と回答・規範の直し」と添え書きしたりすると
-  // 見出しが濁る（2026-08-15 こもごもさん指摘）。何の出来事かは行の頭の 💬／📝 で分かる。
+  // 見出しが濁る（2026-08-15 こもごもさん指摘）。何の出来事かは行の頭の ［問］／［直］ で分かる。
+  // 絵文字は使わない（2026-08-15 こもごもさん指示。角括弧の記号に統一）。
   if(mine.length){
-    h += '<details class="hanrei"><summary>🕘 このブロックの記録（'
+    h += '<details class="hanrei"><summary>このブロックの記録（'
        + mine.length + '）</summary>' + logRows(mine) + '</details>';
   }
   if(rest.length){
-    h += '<details class="hanrei"><summary>🕘 '
+    h += '<details class="hanrei"><summary>'
        + (mine.length ? 'この論証の他の記録（' : 'この論証の記録（')
        + rest.length + '）</summary>' + logRows(rest) + '</details>';
   }
