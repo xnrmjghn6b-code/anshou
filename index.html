@@ -967,7 +967,7 @@ function logRows(list){
     const day = e.date ? esc(e.date) : '日付なし';
     const where = e.mine
       ? '<b class="mine">このブロック</b>'
-      : (e.kind === 'tl' ? '論証ぜんたい' : md(e.kind === 'qa' ? e.row[1] : ''));
+      : (e.kind === 'tl' ? '論証全体' : md(e.kind === 'qa' ? e.row[1] : ''));
     const head = '<td class="nm">' + where
                + '<div class="dim" style="font-size:.7rem">'
                + '<span class="qq">' + (e.kind === 'qa' ? '［問］' : '［修］') + '</span> '
