@@ -303,6 +303,12 @@
   .chip.ng{border-color:var(--ng);color:var(--ng);background:var(--ngbg)}
   .chip.ref{text-decoration:line-through;opacity:.55;cursor:default}
   .chip .dot{color:var(--dot);font-size:.62em;vertical-align:.35em;margin-left:.1em}
+  /* 最後に解いた論証の居場所（目次を開いたとき、そこを開いて光らせる） */
+  .tocbook.here{background:var(--accent-soft);border-radius:.5rem;
+    margin-left:-.4rem;padding-left:.4rem;padding-right:.4rem}
+  .tocbook .last{font-size:.7rem;font-weight:700;color:var(--accent);
+    border:1px solid var(--accent);border-radius:.4rem;padding:.05rem .3rem;margin-left:.3rem}
+  .chip.here{outline:2px solid var(--accent);outline-offset:1px}
   .big{font-size:1.6rem;font-weight:700}
   .setsurei{background:var(--hole);border-left:3px solid var(--accent);
     border-radius:0 .4rem .4rem 0;padding:.8rem .9rem;margin:.5rem 0}
@@ -367,7 +373,7 @@ function daysBetween(a, b){
 }
 
 /* ---------- 進捗 ---------- */
-let S = { v:1, cards:{}, books:{}, memos:[], memosReadAt:"", updated:"" };
+let S = { v:1, cards:{}, books:{}, memos:[], memosReadAt:"", updated:"", last:null };
 let storeOk = true;
 let relinked = [];          // 起動時に引っ越した記録（ホームに1行出す）
 function load(){
@@ -500,6 +506,11 @@ function mergeProgress(remote){
   if(mergeMap("nopre", remote)) changed = true;
   if((remote.updated || "") > (S.updated || "") && remote.cap){ S.cap = remote.cap; changed = true; }
   if(mergeMemos(remote)) changed = true;
+  // 最後に解いた場所は「押した時刻が新しいほう」を採る（端末をまたいでも続きが分かるように）
+  const rl = remote.last;
+  if(rl && rl.card && rl.at && !((S.last && S.last.at || "") >= rl.at)){
+    S.last = rl; changed = true;
+  }
   return changed;
 }
 
@@ -1322,6 +1333,9 @@ function study(queue, back){
     }
     const c = queue[i];
     const st = S.cards[c.id];
+    // 最後に触った札を控える（目次を開いたとき、その場所を開いて見せる）
+    S.last = { card: c.id, at: new Date().toISOString() };
+    save();
     // 答えを隠すと入力欄ごと消えるので、書きかけを控えておいて出し直す
     let memoDraft = "";
     const memoNow = () => {
@@ -1710,6 +1724,12 @@ function toc(){
     s.n += mine.length;
     s.due += mine.filter(c => S.cards[c.id].due <= t).length;
   });
+  // 最後に解いた札の居場所。ここだけ開いた状態で出し、光らせて、そこまで送る
+  const lastId = (S.last && S.last.card) || "";
+  const lastCard = lastId ? CARDS.find(x => x.id === lastId) : null;
+  const lastBook = lastCard ? lastCard.book.name : "";
+  const lastSub = lastCard ? lastCard.book.subject : "";
+  const lastField = lastCard ? lastCard.book.field : "";
   let sub = null;
   groups.forEach((g, gi) => {
     // 科目が変わったら、前の科目を閉じて次の科目を開く（科目は既定で畳む）
@@ -1717,28 +1737,33 @@ function toc(){
       if(sub !== null) h += '</details>';
       sub = g.subject;
       const s = subN[sub];
-      h += '<details class="subject"><summary>' + esc(sub)
+      h += '<details class="subject"' + (sub === lastSub ? ' open' : '')
+         + '><summary>' + esc(sub)
          + '<span class="n">' + s.n + '枚' + (s.due ? '・期日 ' + s.due : '') + '</span></summary>';
     }
     const cs = g.books.reduce((a, b) => a.concat(cardsOf(b)), []);
     const mine = cs.filter(c => !isRef(c));
     const due = mine.filter(c => S.cards[c.id].due <= t).length;
     // 分野は畳んだ状態で出す（2026-07-30 こもごもさん指示。全部開くと目次が長すぎて見渡せない）
-    h += '<details class="field"><summary>'
+    h += '<details class="field"'
+       + (g.subject === lastSub && g.field === lastField ? ' open' : '') + '><summary>'
        + esc(g.field) + '<span class="n">' + mine.length + '枚'
        + (due ? '・期日 ' + due : '') + '</span></summary>'
        + '<button class="link" data-g="' + gi + '">この分野を丸ごと出す（'
        + mine.length + '枚）</button>';
     g.books.forEach(b => {
-      h += '<div class="tocbook"><button class="nm" data-b="' + esc(b.name) + '">'
+      const here = b.name === lastBook;
+      h += '<div class="tocbook' + (here ? ' here' : '') + '"'
+         + (here ? ' id="tocHere"' : '') + '><button class="nm" data-b="' + esc(b.name) + '">'
          + esc(b.name) + '</button> <span class="pill">' + (b.rank || '—') + '</span>'
          + (bookReady(b) ? ' <span class="pill case">通し可</span>' : '')
+         + (here ? ' <span class="last">ここまで</span>' : '')
          + '<div class="chips">';
       cardsOf(b).forEach((c, i) => {
         const ref = isRef(c);
         const st = S.cards[c.id];
         const dot = (!ref && st.due <= t) ? '<span class="dot">●</span>' : '';
-        h += '<button class="' + chipClass(c) + '" title="' + esc(c.block)
+        h += '<button class="' + chipClass(c) + (c.id === lastId ? ' here' : '') + '" title="' + esc(c.block)
            + (ref ? '（参照。暗唱に出していない）'
                   : '／次の期日 ' + st.due + (st.grade != null ? '・前回 ' + st.grade : '')) + '"'
            + (ref ? ' disabled' : ' data-c="' + esc(c.id) + '"') + '>'
@@ -1750,6 +1775,9 @@ function toc(){
   });
   if(sub !== null) h += '</details>';   // 最後の科目を閉じる
   view().innerHTML = h;
+  // 開いた場所が画面の外だと気づけないので、そこまで送る
+  const hereEl = document.getElementById("tocHere");
+  if(hereEl) hereEl.scrollIntoView({block:"center"});
   view().querySelectorAll("[data-g]").forEach(el => {
     el.onclick = () => startToc(groups[+el.dataset.g].books, 0);
   });
