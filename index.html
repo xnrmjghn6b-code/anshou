@@ -129,8 +129,11 @@
      いまは答えをただのインライン文字として流し、色だけを 透明 <-> 赤 で入れ替える。
      (1) 長い穴も行末で普通に折り返す (2) 変わるのは色だけなので寸法は完全に不変。
      答えを見たときの太字（600 -> 700）もやめた——太さが変わると幅も変わるため。 */
+  /* 角を丸めるのは上の2つだけ。下も丸めると、答えを出して地色が消えたとき
+     border-bottom の端が角丸に沿って反り返り、下線の両端がカールして見える
+     （2026-09-12 こもごもさん指摘）。下を直角にすれば線は端まで直線になる。 */
   .hole{background:var(--hole);border-bottom:2px solid var(--holeline);
-    padding:0 .35em;border-radius:.2em;font-weight:600;
+    padding:0 .35em;border-radius:.2em .2em 0 0;font-weight:600;
     color:transparent;overflow-wrap:anywhere;
     /* 行をまたいだとき、角丸と左右の余白を各行に付ける（切り口が裸にならないように） */
     -webkit-box-decoration-break:clone;box-decoration-break:clone;
