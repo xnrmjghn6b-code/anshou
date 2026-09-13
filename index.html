@@ -766,9 +766,18 @@ function sync(){
    法律に書いてあることを並べただけのものは、判例法理より暗唱の優先度が落ちるため
    （2026-07-30 こもごもさん指示）。暗唱から外しはしない。 */
 function isLaw(c){ return !!c.law; }
-function dueCards(){
+/* 今日の分に入れるのは「一度でも解いたカード」だけ（2026-09-13 こもごもさん指示）。
+   未着手のカードは期日が「アプリに入った日」のまま止まるので、古い順に並べると
+   未着手の山（まだ授業で習っていない科目）が先頭を占め、復習が枠に入らなかった。
+   未着手は目次から始める。一度解けば次からここに入る。
+   sub を渡すとその科目だけにする（null＝全科目） */
+function touched(c){ return (S.cards[c.id].reps || 0) > 0; }
+function untouchedCards(){ return CARDS.filter(c => !isRef(c) && !touched(c)); }
+let dueSub = null;                 // いま回している今日の分の科目（終了画面の「続ける」用）
+function dueCards(sub){
   const t = today();
-  return CARDS.filter(c => !isRef(c) && S.cards[c.id].due <= t)
+  return CARDS.filter(c => !isRef(c) && touched(c) && S.cards[c.id].due <= t
+                        && (!sub || c.book.subject === sub))
               .sort((a,b) => (isLaw(a) - isLaw(b))
                           || S.cards[a.id].due.localeCompare(S.cards[b.id].due)
                           || a.id.localeCompare(b.id));
@@ -1228,6 +1237,8 @@ function home(){
   h += '<div class="dim">期日到来 ' + d.length + ' 枚（うち期日超過 ' + late + '）'
      + ' ／ 暗唱 ' + (CARDS.length - refCards().length) + ' 枚・論証 '
      + DATA.books.filter(b=>b.cards.length).length + '本</div>';
+  h += '<div class="dim">今日の分は<b>一度解いたカードの復習だけ</b>。未着手 '
+     + untouchedCards().length + ' 枚は「目次から選ぶ」で始める（一度解けば次から今日の分に入る）。</div>';
   const lawN = CARDS.filter(c => !isRef(c) && isLaw(c)).length;
   if(lawN) h += '<div class="dim">うち ' + lawN
      + ' 枚は<b>条文どおり</b>（法律に書いてあることの整理）。暗唱には出すが、その日の最後に回る。</div>';
@@ -1261,7 +1272,7 @@ function home(){
   view().innerHTML = h;
 
   const go = document.getElementById("go");
-  if(go) go.onclick = () => study(dueCards().slice(0, cap()));
+  if(go) go.onclick = pickSubject;
   document.getElementById("goToc").onclick = toc;
   document.getElementById("goAll").onclick = () => study(
     CARDS.slice().sort((a,b)=>S.cards[a.id].due.localeCompare(S.cards[b.id].due)).slice(0, cap()));
@@ -1277,6 +1288,44 @@ function home(){
   view().querySelectorAll("[data-full]").forEach(el => {
     el.onclick = () => fullMode(DATA.books.find(b => b.name === el.dataset.full));
   });
+}
+
+/* 今日の分の科目を選ぶ（2026-09-13 こもごもさん指示）。
+   おすすめ＝最後に解いたカードの科目（そこに期日が無ければ、期日の枚数が一番多い科目）。
+   科目の並びは目次（分野表）の順 */
+function pickSubject(){
+  hideRail();
+  setHdr("");
+  const subs = [];
+  tocGroups().forEach(g => { if(!subs.includes(g.subject)) subs.push(g.subject); });
+  const rows = subs.map(s => ({s: s, n: dueCards(s).length})).filter(r => r.n);
+  if(!rows.length){ home(); return; }
+  const lastId = (S.last && S.last.card) || "";
+  const lastCard = lastId ? CARDS.find(x => x.id === lastId) : null;
+  let rec = lastCard && rows.find(r => r.s === lastCard.book.subject);
+  if(!rec) rec = rows.slice().sort((a,b) => b.n - a.n)[0];
+  const all = dueCards().length;
+  let h = '<div class="card"><div class="book">今日の分：どの科目を回す？</div>'
+    + '<div class="dim">期日の古い順に最大 ' + cap() + ' 枚。'
+    + (lastCard && rec.s === lastCard.book.subject ? '最後に解いた科目をおすすめにしている。'
+                                                   : '期日の枚数が一番多い科目をおすすめにしている。')
+    + '</div><div class="row" style="margin-top:1rem">'
+    + '<button class="primary" data-sub="' + esc(rec.s) + '">おすすめ：' + esc(rec.s)
+    + '（' + Math.min(rec.n, cap()) + '枚）</button></div>'
+    + '<div class="row" style="margin-top:.6rem">';
+  rows.filter(r => r !== rec).forEach(r => {
+    h += '<button data-sub="' + esc(r.s) + '">' + esc(r.s) + '（期日 ' + r.n + '）</button>';
+  });
+  h += '<button data-sub="">全科目（期日 ' + all + '）</button>'
+     + '<button id="h">ホーム</button></div></div>';
+  view().innerHTML = h;
+  view().querySelectorAll("[data-sub]").forEach(el => {
+    el.onclick = () => {
+      dueSub = el.dataset.sub || null;
+      study(dueCards(dueSub).slice(0, cap()));
+    };
+  });
+  document.getElementById("h").onclick = home;
 }
 
 /* 1枚ずつ回す。back は終わったときの戻り先（目次から始めたら目次に戻る） */
@@ -1596,19 +1645,24 @@ function done(n, back, lastBook){
   // 目次を開き直して次を探す手間を無くす。並びは分野表どおりの体系順
   const nx = back ? nextBookAfter(lastBook) : null;
   view().innerHTML = '<div class="card"><div class="big">' + n + ' 枚おわり</div>'
-    + '<div class="dim">期日は自動で伸びた。期日が来ているものは残り ' + dueCards().length + ' 枚。</div>'
+    + '<div class="dim">期日は自動で伸びた。期日が来ているものは残り '
+    + (!back && dueSub ? esc(dueSub) + ' で ' + dueCards(dueSub).length + ' 枚（全科目 '
+                         + dueCards().length + ' 枚）' : dueCards().length + ' 枚') + '。</div>'
     + '<div class="row" style="margin-top:1rem">'
     + (nx ? '<button class="primary" id="nx">次の論証へ（' + esc(nx.name) + '）</button>' : '')
     + (back ? '<button class="' + (nx ? '' : 'primary ') + '" id="bk">目次にもどる</button>' : '')
-    + '<button class="' + (back ? '' : 'primary ') + '" id="again">期日の分を続ける</button>'
+    + '<button class="' + (back ? '' : 'primary ') + '" id="again">'
+    + (!back && dueSub ? esc(dueSub) + 'の期日の分を続ける' : '期日の分を続ける') + '</button>'
     + '<button id="h">ホーム</button></div></div>';
   const nb = document.getElementById("nx");
   if(nb) nb.onclick = () => startToc([nx]);
   const bk = document.getElementById("bk");
   if(bk) bk.onclick = back;
   document.getElementById("again").onclick = () => {
-    const d = dueCards().slice(0, cap());
-    d.length ? study(d) : home();
+    // 目次から来たときは科目を選び直してもらう。今日の分から来たときは同じ科目を続ける
+    if(back){ pickSubject(); return; }
+    const d = dueCards(dueSub).slice(0, cap());
+    d.length ? study(d) : pickSubject();
   };
   document.getElementById("h").onclick = home;
 }
